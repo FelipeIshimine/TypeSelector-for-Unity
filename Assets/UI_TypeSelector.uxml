@@ -1,0 +1,9 @@
+<engine:UXML xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:engine="UnityEngine.UIElements" xmlns:editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="True">
+    <Style src="project://database/Packages/ishimine.type-selector/Assets/ST_TypeSelector.uss?fileID=7433441132597879392&amp;guid=2c6c0b57eec72ba4d87451383151c1cb&amp;type=3#ST_TypeSelector" />
+    <engine:VisualElement name="Container" style="flex-grow: 1; flex-direction: row; margin-top: 1px; margin-bottom: 1px;">
+        <engine:Button name="TypeSelector" style="align-self: flex-start; flex-direction: row; padding-top: 1px; padding-right: 0; padding-bottom: 1px; padding-left: 0; position: absolute; top: 1px; right: 1px; margin-right: 0; margin-bottom: 2px;">
+            <engine:Label text="Nombre de prueba" name="TypeName" picking-mode="Ignore" class="type-name" style="overflow: hidden; font-size: 10px;" />
+            <engine:VisualElement name="Icon" picking-mode="Ignore" class="type-selector-icon" />
+        </engine:Button>
+    </engine:VisualElement>
+</engine:UXML>

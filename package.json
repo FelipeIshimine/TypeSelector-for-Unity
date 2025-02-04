@@ -1,0 +1,27 @@
+{
+  "name": "ishimine.type-selector",
+  "version": "0.0.1",
+  "displayName": "Type Selector",
+  "unity": "2022.1",
+  "description": "Allows the user to dynamicaly change the type of a given field \nin the inspector, for any other class that inherists from \nthe same base class in code.",
+  "author": {
+    "name": "Felipe Ishimine",
+    "email": "felipeishimine@gmail.com",
+    "url": "https://felipeishimine.github.io/"
+  },
+  "keywords": [
+    "events",
+    "scriptable objects",
+    "dropdown",
+    "type",
+    "polymorph"
+  ],
+  "documentationUrl": "https://docs.google.com/document/d/18jEXBl_khysBDwu8PRY-Mx5zzYJJvavr3shg7RPdEDc/edit?usp=sharing",
+  "samples": [
+    {
+      "displayName": "Sample",
+      "description": "Example with some Abstract classes and implementations",
+      "path": "Samples~/Sample"
+    }
+  ]
+}
