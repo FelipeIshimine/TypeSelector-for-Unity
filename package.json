@@ -1,6 +1,6 @@
 {
-  "name": "ishimine.type-selector",
-  "version": "0.0.1",
+  "name": "com.felipe-ishimine.type-selector",
+  "version": "1.0.0",
   "displayName": "Type Selector",
   "unity": "2022.1",
   "description": "Allows the user to dynamicaly change the type of a given field \nin the inspector, for any other class that inherists from \nthe same base class in code.",
