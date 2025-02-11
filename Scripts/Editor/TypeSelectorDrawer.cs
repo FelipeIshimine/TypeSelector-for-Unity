@@ -134,7 +134,13 @@ public class TypeSelectorDrawer : PropertyDrawer
 
 		activeTypeName.text = GetButtonLabel(property);
 
-		if (property.managedReferenceValue == null || selectorAttribute.Mode == DrawMode.Inline)
+		activeTypeName.RemoveFromClassList("none");
+		activeTypeName.RemoveFromClassList("show");
+		if (property.managedReferenceValue == null)
+		{
+			activeTypeName.AddToClassList("none");
+		}
+		else if (selectorAttribute.Mode == DrawMode.Inline)
 		{
 			activeTypeName.RemoveFromClassList("show");
 		}
@@ -159,7 +165,7 @@ public class TypeSelectorDrawer : PropertyDrawer
 			return value;
 		}
 
-		return "-Select Type-";
+		return "-null-";
 	}
 
 	private string GetDisplayName(Type type)

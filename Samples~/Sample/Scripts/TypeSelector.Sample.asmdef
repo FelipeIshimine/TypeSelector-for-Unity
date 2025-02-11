@@ -1,0 +1,16 @@
+{
+    "name": "TypeSelector.Sample",
+    "rootNamespace": "",
+    "references": [
+        "GUID:79621526508c4c8e912f02bffabfc9af"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
