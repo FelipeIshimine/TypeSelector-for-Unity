@@ -49,8 +49,7 @@ public class ScaleAnimation : AnimationBaseClass
 	public override void Update(GameObject gameObject, float delta)
 	{
 		time += delta;
-		var targetPosition = Mathf.Sin(time * speed * TWO_PI) * scale * Vector3.one + Vector3.one;
-		gameObject.transform.localScale = Vector3.MoveTowards(gameObject.transform.localScale, targetPosition, delta*speed);
+		gameObject.transform.localScale = (Mathf.Sin(time * speed * TWO_PI)+1)/2 * scale * Vector3.one + Vector3.one;
 	}
 }
 
