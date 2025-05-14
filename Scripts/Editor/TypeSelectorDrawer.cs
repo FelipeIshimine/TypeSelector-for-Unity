@@ -15,11 +15,10 @@ namespace TypeSelector
 [CustomPropertyDrawer(typeof(TypeSelectorAttribute))]
 public class TypeSelectorDrawer : PropertyDrawer
 {
-	private Button typeSelectorBtn;
-	private Label activeTypeName;
-
 	public override VisualElement CreatePropertyGUI(SerializedProperty property)
 	{
+		Button typeSelectorBtn;
+		Label activeTypeName;
 		TypeSelectorAttribute selectorAttribute = (TypeSelectorAttribute)attribute;
 		if (SerializationUtility.HasManagedReferencesWithMissingTypes(property.serializedObject.targetObject))
 		{
@@ -94,35 +93,6 @@ public class TypeSelectorDrawer : PropertyDrawer
 				
 				subContainer.Add(contentContainer);
 				container.Add(subContainer);
-
-				/*VisualElement sContainre = new VisualElement()
-				{
-					style = { alignItems = Align.Stretch, flexGrow = 1 }
-				};
-				sContainre.Add(new Label(property.displayName)
-				{
-					style = { marginLeft = 2 }
-				});
-
-				if (property.hasVisibleChildren)
-				{
-					VisualElement propsContainer = new VisualElement()
-					{
-						style = { alignItems = Align.Stretch, flexGrow = 1 }
-					};
-					propsContainer.AddToClassList("no-foldout-container");
-					foreach (SerializedProperty childProperty in GetChildrenProperties(property))
-					{
-						Debug.Log(childProperty.propertyPath);
-						propsContainer.Add(new PropertyField(childProperty)
-						{
-							style = { flexGrow = 1 }
-						});
-					}
-					sContainre.Add(propsContainer);
-				}
-
-				container.Add(sContainre);*/
 			}
 				break;
 			default:
@@ -149,7 +119,10 @@ public class TypeSelectorDrawer : PropertyDrawer
 			activeTypeName.AddToClassList("show");
 		}
 		
-		typeSelectorBtn.clicked += () => SelectorButtonClicked(typeSelectorBtn, property);
+		typeSelectorBtn.clicked += () =>
+		{
+			SelectorButtonClicked(typeSelectorBtn, property);
+		};
 		typeSelectorBtn.RemoveFromHierarchy();
 		container.Add(typeSelectorBtn);
 		return container;
