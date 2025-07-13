@@ -8,6 +8,7 @@ using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Object = UnityEngine.Object;
 
 namespace TypeSelector
 {
@@ -15,7 +16,9 @@ namespace TypeSelector
 [CustomPropertyDrawer(typeof(TypeSelectorAttribute))]
 public class TypeSelectorDrawer : PropertyDrawer
 {
-	public override VisualElement CreatePropertyGUI(SerializedProperty property)
+    private Editor _editor;
+
+    public override VisualElement CreatePropertyGUI(SerializedProperty property)
 	{
 		Button typeSelectorBtn;
 		Label activeTypeName;
@@ -69,7 +72,8 @@ public class TypeSelectorDrawer : PropertyDrawer
 				contentContainer.AddToClassList("no-foldout-container");
 				contentContainer.Add(propertyField);
 				subContainer.Add(contentContainer);
-				
+
+                
 				container.Add(subContainer);
 				break;
 			}
@@ -128,7 +132,7 @@ public class TypeSelectorDrawer : PropertyDrawer
 		return container;
 	}
 
-	private string GetButtonLabel(SerializedProperty p)
+    private string GetButtonLabel(SerializedProperty p)
 	{
 		var managedReferenceValue = p.managedReferenceValue;
 		if (managedReferenceValue != null)
