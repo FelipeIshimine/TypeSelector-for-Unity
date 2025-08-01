@@ -91,12 +91,24 @@ public class TypeSelectorDrawer : PropertyDrawer
 				VisualElement contentContainer = new VisualElement();
 				contentContainer.AddToClassList("no-foldout-container");
 				subContainer.Add(contentContainer);
+                
+                
 				var propertyField = new PropertyField(property) { style = { flexGrow = 1 } };
 				propertyField.AddToClassList("no-foldout");
 				contentContainer.Add(propertyField);
 				
 				subContainer.Add(contentContainer);
 				container.Add(subContainer);
+
+                if (!property.hasVisibleChildren)
+                {
+                    contentContainer.style.display = DisplayStyle.None;
+                }
+                else
+                {
+                    contentContainer.style.display = DisplayStyle.Flex;
+                }
+                
 			}
 				break;
 			default:
