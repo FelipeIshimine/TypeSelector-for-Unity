@@ -276,9 +276,13 @@ namespace TypeSelector
                 return;
             }
 
-            if (targetType.IsArray || targetType.IsGenericType && targetType.GetGenericTypeDefinition() == typeof(List<>))
+            if (targetType.IsArray)
             {
 	            targetType = targetType.GetElementType();
+            }
+            else if (targetType.IsGenericType && targetType.GetGenericTypeDefinition() == typeof(List<>))
+            {
+	            targetType = targetType.GetGenericArguments()[0];
             }
 
             var unityObjectType = typeof(UnityEngine.Object);
