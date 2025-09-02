@@ -7,7 +7,6 @@ namespace TypeSelector
 	public class TypeSelectorAttribute : PropertyAttribute
 	{
 		public readonly DrawMode Mode;
-
 		public TypeSelectorAttribute(DrawMode mode = DrawMode.Default)
 		{
 			this.Mode = mode;
@@ -18,4 +17,16 @@ namespace TypeSelector
 	{
 		Default = 0, NoFoldout = 1, Inline = 2
 	}
+	
+	
+	[AttributeUsage(AttributeTargets.Field)]
+	public class GenericTypeSelectorAttribute : PropertyAttribute
+	{
+		public readonly DrawMode Mode;
+		public GenericTypeSelectorAttribute(DrawMode mode = DrawMode.Default)
+		{
+			this.Mode = mode;
+		}
+	}
+
 }
