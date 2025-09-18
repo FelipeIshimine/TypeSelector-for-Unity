@@ -29,7 +29,7 @@ namespace TypeSelector
 	public class AdvancedDropdownBuilder
 	{
 		private string title;
-		private List<(string, Texture2D)> values = new();
+		private List<AdvancedDropdownPath> values = new();
 		private int startingID;
 		private Action<int> callback;
 		private char splitCharacter = '/';
@@ -45,7 +45,7 @@ namespace TypeSelector
 			indices = new List<int>();
 			foreach (string element in elements)
 			{
-				values.Add((element, null));
+				values.Add(new AdvancedDropdownPath(element, null));
 				indices.Add(values.Count - 1);
 			}
 
@@ -57,23 +57,33 @@ namespace TypeSelector
 			indices = new List<int>();
 			foreach (var element in elements)
 			{
-				values.Add(element);
+				values.Add(new AdvancedDropdownPath(element.Item1,element.Item2));
 				indices.Add(values.Count - 1);
 			}
 
 			return this;
 		}
+		public AdvancedDropdownBuilder AddElements(IEnumerable<AdvancedDropdownPath> elements, out List<int> indices)
+		{
+			indices = new List<int>();
+			foreach (var element in elements)
+			{
+				values.Add(element);
+				indices.Add(values.Count - 1);
+			}
+			return this;
+		}
 
 		public AdvancedDropdownBuilder AddElement(string element, Texture2D icon, out int index)
 		{
-			values.Add((element, icon));
+			values.Add(new (element, icon));
 			index = values.Count - 1;
 			return this;
 		}
 
 		public AdvancedDropdownBuilder AddElement(string element, out int index)
 		{
-			values.Add((element, null));
+			values.Add(new(element, null));
 			index = values.Count - 1;
 			return this;
 		}
@@ -98,7 +108,7 @@ namespace TypeSelector
 			AdvancedDropdownItem startingItem = null;
 			for (int i = 0; i < values.Count; i++)
 			{
-				var split = values[i].Item1.Split(splitCharacter);
+				var split = values[i].Path.Split(splitCharacter);
 				var previous = root;
 				for (var j = 0; j < split.Length; j++)
 				{
@@ -108,7 +118,7 @@ namespace TypeSelector
 						item = pathToDropdownItems[s] = new AdvancedDropdownItem(s)
 						{
 							id = i,
-							icon = values[i].Item2
+							icon = values[i].Icon
 						};
 
 						if (i == startingID)
@@ -152,5 +162,17 @@ namespace TypeSelector
 				Debug.LogError("Could not find the internal 'itemSelected' field via reflection.");
 			}
 		}
+	}
+}
+
+public struct AdvancedDropdownPath
+{
+	public readonly string Path;
+	public readonly Texture2D Icon;
+
+	public AdvancedDropdownPath(string path, Texture2D icon)
+	{
+		Path = path;
+		Icon = icon;
 	}
 }
