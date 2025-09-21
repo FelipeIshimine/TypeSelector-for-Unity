@@ -113,12 +113,15 @@ namespace TypeSelector
 				for (var j = 0; j < split.Length; j++)
 				{
 					var s = split[j];
-					if (!pathToDropdownItems.TryGetValue(s, out var item) || j == split.Length - 1)
+
+					bool isLast = j == split.Length - 1;
+					
+					if (!pathToDropdownItems.TryGetValue(s, out var item) || isLast)
 					{
 						item = pathToDropdownItems[s] = new AdvancedDropdownItem(s)
 						{
 							id = i,
-							icon = values[i].Icon
+							icon = isLast?values[i].Icon:null
 						};
 
 						if (i == startingID)

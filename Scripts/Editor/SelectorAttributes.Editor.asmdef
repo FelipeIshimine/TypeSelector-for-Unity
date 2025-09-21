@@ -1,5 +1,5 @@
 {
-    "name": "TypeSelector.Editor",
+    "name": "SelectorAttributes.Editor",
     "rootNamespace": "",
     "references": [
         "GUID:79621526508c4c8e912f02bffabfc9af"

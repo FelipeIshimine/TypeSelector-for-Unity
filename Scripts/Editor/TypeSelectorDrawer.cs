@@ -51,10 +51,9 @@ namespace TypeSelector
 
             // Single field (original behaviour)
             var treeAsset =
-                AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
-                    "Packages/com.felipe-ishimine.type-selector/Assets/UI_TypeSelector.uxml");
+                AssetDatabase.LoadAssetAtPath<VisualTreeAsset>("Packages/com.felipe-ishimine.selector-attributes/Assets/UI_TypeSelector.uxml");
             var container = treeAsset?.CloneTree().Q<VisualElement>("Container") ?? new VisualElement();
-            var ss = AssetDatabase.LoadAssetAtPath<StyleSheet>("Packages/com.felipe-ishimine.type-selector/Assets/ST_TypeSelector.uss");
+            var ss = AssetDatabase.LoadAssetAtPath<StyleSheet>("Packages/com.felipe-ishimine.selector-attributes/Assets/ST_TypeSelector.uss");
             if (ss != null) container.styleSheets.Add(ss);
 
             switch (selectorAttribute.Mode)
@@ -64,11 +63,46 @@ namespace TypeSelector
                     break;
                 case DrawMode.Inline:
                     property.isExpanded = true;
-                    var inlineParent = new VisualElement() { style = { flexDirection = FlexDirection.Row, flexGrow = 1, marginRight = 16 } };
-                    inlineParent.Add(new Label(property.displayName));
-                    var propertyField = new PropertyField(property) { style = { flexGrow = 1 } };
+                    var inlineParent = new VisualElement()
+                    {
+	                    style =
+	                    {
+		                    flexDirection = FlexDirection.Row,
+		                    flexGrow = 1,
+		                    marginRight = 16 
+	                    }
+                    };
+                    inlineParent.Add(new Label(property.displayName)
+                    {
+		                  style  =
+		                  {
+			                  width = Length.Percent(30),
+			                  maxWidth = 220,
+			                  flexGrow = 0,
+			                  flexShrink = 0,
+		                  }
+                    });
+                    
+                    var contentContainer = new VisualElement()
+                    {
+	                    style =
+	                    {
+		                    flexGrow = 1,
+		                    flexShrink = 0,
+		                    width = Length.Percent(70),
+	                    }
+                    };
+                    
+                    var propertyField = new PropertyField(property)
+                    {
+	                    style =
+	                    {
+		                    flexGrow = 1,
+		                    flexShrink = 1,
+	                    }
+                    };
                     propertyField.AddToClassList("inline");
-                    var contentContainer = new VisualElement() { style = { flexGrow = 1 } };
+                
                     contentContainer.AddToClassList("no-foldout-container");
                     contentContainer.Add(propertyField);
                     inlineParent.Add(contentContainer);
@@ -347,12 +381,12 @@ namespace TypeSelector
             {
                 var type = typesArray[i];
                 string path = null;
-                foreach (object customAttribute in type.GetCustomAttributes(typeof(TypeSelectorNameAttribute), false))
+                foreach (object customAttribute in type.GetCustomAttributes(typeof(SelectorNameAttribute), false))
                 {
-                    if (customAttribute is TypeSelectorNameAttribute dropdownPathAttribute) path = dropdownPathAttribute.Name;
+                    if (customAttribute is SelectorNameAttribute dropdownPathAttribute) path = dropdownPathAttribute.Name;
                 }
 
-                pairs[i] = string.IsNullOrEmpty(path) ? new(GetDisplayName(type), type) : new(path, type);
+                pairs[i] = string.IsNullOrEmpty(path) ? new(SelectorName.GetDisplayName(type), type) : new(path, type);
             }
 
             pairs[^1].path = "-null-";
@@ -409,21 +443,10 @@ namespace TypeSelector
         private string GetButtonLabel(SerializedProperty p)
         {
             var managedReferenceValue = p.managedReferenceValue;
-            if (managedReferenceValue != null) return GetDisplayName(managedReferenceValue.GetType());
+            if (managedReferenceValue != null) return SelectorName.GetDisplayName(managedReferenceValue.GetType());
             return "-null-";
         }
 
-        private string GetDisplayName(Type type)
-        {
-            if (type == null) return "NULL";
-            var typeFullName = type.FullName;
-            var typeNamespace = type.Namespace;
-            string resultName;
-            if (type.GetCustomAttribute(typeof(TypeSelectorNameAttribute), false) is TypeSelectorNameAttribute nameAttribute) resultName = Path.GetFileName(nameAttribute.Name);
-            else if (!string.IsNullOrEmpty(typeFullName) && !string.IsNullOrEmpty(typeNamespace)) resultName = typeFullName.Replace(typeNamespace, string.Empty).Replace(".", string.Empty);
-            else if (!string.IsNullOrEmpty(typeFullName)) resultName = type.FullName;
-            else resultName = type.Name;
-            return resultName;
-        }
+        
     }
 }

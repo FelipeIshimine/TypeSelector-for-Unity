@@ -1,9 +1,9 @@
 {
-  "name": "com.felipe-ishimine.type-selector",
-  "version": "1.0.1",
-  "displayName": "Type Selector",
+  "name": "com.felipe-ishimine.selector-attributes",
+  "version": "1.1.0",
+  "displayName": "Selector Attributes",
   "unity": "2022.1",
-  "description": "Allows the user to dynamicaly change the type of a given field \nin the inspector, for any other class that inherists from \nthe same base class in code.",
+  "description": "Allows the user to dynamically change the type of a given field \nin the inspector, for any other class that inherits from \nthe same base class in code.",
   "author": {
     "name": "Felipe Ishimine",
     "email": "felipeishimine@gmail.com",
@@ -14,7 +14,9 @@
     "scriptable objects",
     "dropdown",
     "type",
-    "polymorph"
+    "polymorph",
+    "selector",
+    "attributes"
   ],
   "documentationUrl": "https://docs.google.com/document/d/18jEXBl_khysBDwu8PRY-Mx5zzYJJvavr3shg7RPdEDc/edit?usp=sharing",
   "samples": [

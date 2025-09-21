@@ -102,6 +102,8 @@ public class AssetSelectorDrawer : PropertyDrawer
 
 		HashSet<Type> typesFound = new HashSet<Type>();
 		List<Type> typesForCreation = new List<Type>();
+
+		
 		if (!cache.TryGetValue(key, out List<Item> cached))
 		{
 			cached = new();
@@ -119,23 +121,36 @@ public class AssetSelectorDrawer : PropertyDrawer
 					typesFound.Add(foundType);
 				}
 			}
-
+			cached.Sort((x,y) => String.Compare(x.Path, y.Path, StringComparison.Ordinal));
+			
 			var scriptableObjectType = typeof(ScriptableObject);
 			if (scriptableObjectType.IsAssignableFrom(fieldType))
 			{
 				typesForCreation.AddRange(TypeCache.GetTypesDerivedFrom(fieldType).Where(x=> !x.IsAbstract && !x.IsGenericType));
 			}
 			
+			if (!fieldType.IsAbstract && !fieldType.IsGenericType && !typesForCreation.Contains(fieldType))
+			{
+				typesForCreation.Add(fieldType);
+			}
+			
 			if (typesForCreation.Count == 1)
 			{
-				cached.Add(new Item($"-New {typesForCreation[0].Name}.asset-", null, typesForCreation[0]));
+				cached.Add(new Item($"-New-/{SelectorName.GetDisplayName(typesForCreation[0])}", null, typesForCreation[0]));
 			}
 			else
 			{
-				foreach (Type type in typesForCreation)
+				List<Item> creationItems = new();
+
+				for (var index = 0; index < typesForCreation.Count; index++)
 				{
-					cached.Add(new Item($"-New-/New {type.Name}.asset", null, type));
+					var type = typesForCreation[index];
+					creationItems.Add(new Item($"-New-/{SelectorName.GetDisplayName(type)}", null,
+						type));
 				}
+
+				creationItems.Sort((x,y) => String.Compare(x.Path, y.Path, StringComparison.Ordinal));
+				cached.AddRange(creationItems);
 			}
 			
 		}
@@ -168,9 +183,10 @@ public class AssetSelectorDrawer : PropertyDrawer
 						{
 							if (x.Path.Contains("-New-"))
 							{
-								return new AdvancedDropdownPath(x.Path, x.Icon);
+								var split = x.Path.Split("/");
+								return new AdvancedDropdownPath($"{split[1]}/{split[0]}", x.Icon);
 							}
-							return new AdvancedDropdownPath($"{x.Type.Name}/{Path.GetFileName(x.Path)}", x.Icon);
+							return new AdvancedDropdownPath($"{SelectorName.GetDisplayName(x.Type)}/{Path.GetFileName(x.Path)}", x.Icon);
 						}),
 						out indices);
 				}
@@ -205,7 +221,7 @@ public class AssetSelectorDrawer : PropertyDrawer
 			else
 			{
 				var item = cached[index];
-				var path = EditorUtility.SaveFilePanelInProject($"New {item.Type.Name}", $"New {item.Type.Name}", "asset", "");
+				var path = EditorUtility.SaveFilePanelInProject($"New {item.Type.Name}", $"New ", "asset", "");
 				if(!string.IsNullOrEmpty(path))
 				{
 					var instance = ScriptableObject.CreateInstance(item.Type);
