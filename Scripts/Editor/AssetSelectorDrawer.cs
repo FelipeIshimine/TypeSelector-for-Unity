@@ -12,7 +12,7 @@ using UnityEngine;
 using UnityEngine.Search;
 using UnityEngine.UIElements;
 using Object = UnityEngine.Object;
-using ObjectField = UnityEditor.Search.ObjectField;
+using ObjectField = UnityEditor.UIElements.ObjectField;
 
 [CustomPropertyDrawer(typeof(AssetSelectorAttribute))]
 public class AssetSelectorDrawer : PropertyDrawer
@@ -41,13 +41,11 @@ public class AssetSelectorDrawer : PropertyDrawer
 			return container;
 		}
 			
-			
 		ObjectField objectField = new ObjectField(property.displayName)
 		{
 			value = property.objectReferenceValue,
 			objectType = fieldType,
-			searchContext = SearchService.CreateContext(new SearchProvider[]{SearchService.GetProvider("asset")}, $"p:{fieldType.Name}", SearchFlags.FocusContext | SearchFlags.Sorted ),
-			searchViewFlags = SearchViewFlags.Borderless, 
+			allowSceneObjects = false,
 			style = { flexGrow = 1, flexShrink = 1}
 		};
 		
