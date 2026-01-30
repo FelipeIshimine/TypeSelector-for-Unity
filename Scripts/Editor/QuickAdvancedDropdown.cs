@@ -7,9 +7,9 @@ using UnityEngine;
 public class QuickAdvancedDropdown : AdvancedDropdown
 {
 	private readonly AdvancedDropdownItem root;
-	private readonly Action<int> callback;
+	private readonly Action<AdvancedDropdownItem> callback;
 
-	public QuickAdvancedDropdown(AdvancedDropdownItem root, Action<int> action) : base(new AdvancedDropdownState())
+	public QuickAdvancedDropdown(AdvancedDropdownItem root, Action<AdvancedDropdownItem> action) : base(new AdvancedDropdownState())
 	{
 		this.root = root;
 		callback = action;
@@ -20,7 +20,7 @@ public class QuickAdvancedDropdown : AdvancedDropdown
 		return root;
 	}
 
-	protected override void ItemSelected(AdvancedDropdownItem item) => callback.Invoke(item.id);
+	protected override void ItemSelected(AdvancedDropdownItem item) => callback.Invoke(item);
 }
 
 
@@ -32,6 +32,8 @@ public class AdvancedDropdownBuilder
 	private Action<int> callback;
 	private char splitCharacter = '/';
 
+    protected Dictionary<AdvancedDropdownItem, int> ItemToIndex = new();
+    
 	public AdvancedDropdownBuilder WithTitle(string title)
 	{
 		this.title = title;
@@ -121,8 +123,10 @@ public class AdvancedDropdownBuilder
 						id = i,
 						icon = isLast?values[i].Icon:null
 					};
-
-					if (i == startingID)
+                    
+                    ItemToIndex.Add(item, i);
+                    
+                    if (i == startingID)
 					{
 						startingItem = previous;
 					}
@@ -133,8 +137,7 @@ public class AdvancedDropdownBuilder
 				previous = item;
 			}
 		}
-
-		return new QuickAdvancedDropdown(root, callback);
+		return new QuickAdvancedDropdown(root, x => callback?.Invoke(ItemToIndex[x]));
 	}
 
 	public AdvancedDropdownBuilder SetStartingId(int i)
