@@ -15,4 +15,3 @@ public enum DrawMode
 {
 	Default = 0, NoFoldout = 1, Inline = 2
 }
-	
