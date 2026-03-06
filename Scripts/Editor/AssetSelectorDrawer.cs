@@ -1,6 +1,4 @@
-﻿// ---------- Property drawer using UI Toolkit ----------
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,281 +7,323 @@ using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Object = UnityEngine.Object;
-using ObjectField = UnityEditor.UIElements.ObjectField;
 
 [CustomPropertyDrawer(typeof(AssetSelectorAttribute))]
 public class AssetSelectorDrawer : PropertyDrawer
 {
-// Cache per-property asset lists so we don't query AssetDatabase on every UI rebuild
-	private static readonly Dictionary<string, List<Item>> cache = new();
-	private static readonly Dictionary<Texture, Texture2D> icons = new();
+    // ── Cache ─────────────────────────────────────────────────────────────────
 
-	public override VisualElement CreatePropertyGUI(SerializedProperty property)
-	{
-		var assetSelectorAttribute = attribute as AssetSelectorAttribute;
+    // Stores the asset items; creation items are kept separately so they are
+    // always accessible even on a cache hit.
+    private static readonly Dictionary<string, CacheEntry> s_cache = new();
+    private static readonly Dictionary<Texture, WeakReference<Texture2D>> s_icons = new();
 
-		var group = assetSelectorAttribute.Group;
-		var folders = assetSelectorAttribute.Folders;
-		
-		return CreateProperty(property, GetFieldType(), group, folders);
-	}
+    // Invalidate on any project change (asset import, delete, move, etc.)
+    static AssetSelectorDrawer()
+    {
+        EditorApplication.projectChanged += () => s_cache.Clear();
+    }
 
-	public VisualElement CreateProperty(SerializedProperty property,Type fieldType, AssetSelectorAttribute.GroupMode group, params string[] folders)
-	{
-		var container = new VisualElement() { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, flexGrow = 1,flexShrink = 1} };
-		
-		if (property.propertyType != SerializedPropertyType.ObjectReference)
-		{
-			container.Add(new Label("[QuickAssetDropdown] can only be used on UnityEngine.Object fields"));
-			return container;
-		}
-			
-		ObjectField objectField = new ObjectField(property.displayName)
-		{
-			value = property.objectReferenceValue,
-			objectType = fieldType,
-			allowSceneObjects = false,
-			style = { flexGrow = 1, flexShrink = 1}
-		};
-		
-		objectField.BindProperty(property);
-	
-		var dropButton = new Button() { text = "▾", tooltip = "Select asset...", style = { width = 24 } };
+    // ── PropertyDrawer entry point ────────────────────────────────────────────
 
-		//var fieldType = GetFieldType();
+    public override VisualElement CreatePropertyGUI(SerializedProperty property)
+    {
+        var attr = attribute as AssetSelectorAttribute;
+        return CreateProperty(property, GetFieldType(), attr.Group, attr.Folders);
+    }
 
-		dropButton.clicked += () => ShowDropdown(property, dropButton,fieldType, group,folders);
+    // ── Public factory (also used by ScriptableObjectFallbackDrawer) ──────────
 
-		objectField.RegisterCallbackOnce<GeometryChangedEvent>(x =>
-		{
-			var label =objectField.Q<Label>();
-			if (label != null)
-			{
-				label.style.width = Length.Percent(45);
-				label.style.minWidth = 120;
-				label.style.marginRight = 4;
-			}
-		});
-		
-		container.Add(objectField);
-		container.Add(dropButton);
-		return container;
-	}
+    public VisualElement CreateProperty(
+        SerializedProperty property,
+        Type fieldType,
+        AssetSelectorAttribute.GroupMode group,
+        params string[] folders)
+    {
+        var container = new VisualElement
+        {
+            style =
+            {
+                flexDirection = FlexDirection.Row,
+                alignItems    = Align.Center,
+                flexGrow      = 1,
+                flexShrink    = 1,
+            }
+        };
 
-	private Type GetFieldType()
-	{
-// propertyInfo is available on PropertyDrawer
-		if (fieldInfo != null)
-		{
-// If it's a field of type T, but might be UnityEngine.Object or subclass
-			var t = fieldInfo.FieldType;
-// If it's serialized as object reference wrapper like Object, try to find generic type arguments (rare)
-			if (t == typeof(UnityEngine.Object) || t == typeof(object)) return typeof(UnityEngine.Object);
-			return t.IsSubclassOf(typeof(UnityEngine.Object)) ? t : typeof(UnityEngine.Object);
-		}
-		return typeof(UnityEngine.Object);
-	}
+        if (property.propertyType != SerializedPropertyType.ObjectReference)
+        {
+            container.Add(new Label("[AssetSelector] can only be used on UnityEngine.Object fields"));
+            return container;
+        }
 
+        var objectField = new ObjectField(property.displayName)
+        {
+            value             = property.objectReferenceValue,
+            objectType        = fieldType,
+            allowSceneObjects = false,
+            style             = { flexGrow = 1, flexShrink = 1 },
+        };
+        objectField.BindProperty(property);
 
-	private void ShowDropdown(SerializedProperty property, VisualElement button,Type fieldType, AssetSelectorAttribute.GroupMode group, string[] folders)
-	{
-		/*AssetSelectorAttribute asseSelectorAttribute = fieldInfo.GetCustomAttributes(typeof(AssetSelectorAttribute),false)[0] as AssetSelectorAttribute;
-		string[] folders = asseSelectorAttribute.Folders?.Length > 0 ? asseSelectorAttribute.Folders : null;*/
+        objectField.RegisterCallbackOnce<GeometryChangedEvent>(_ =>
+        {
+            var label = objectField.Q<Label>();
+            if (label == null) return;
+            label.style.width     = Length.Percent(45);
+            label.style.minWidth  = 120;
+            label.style.marginRight = 4;
+        });
 
-		string filter = fieldType == typeof(UnityEngine.Object) ? "" : $"t:{fieldType.Name}";
+        var dropButton = new Button { text = "▾", tooltip = "Select asset...", style = { width = 24 } };
 
-		var key = (folders == null ? "<all>" : string.Join(";", folders)) + "|" +
-			(string.IsNullOrEmpty(filter) ? "<alltypes>" : filter);
+        // Capture path, not the property itself, to survive drawer pooling.
+        var propertyPath           = property.propertyPath;
+        var serializedObjectTarget = property.serializedObject.targetObject;
 
-		HashSet<Type> typesFound = new HashSet<Type>();
-		List<Type> typesForCreation = new List<Type>();
+        dropButton.clicked += () =>
+        {
+            // Re-resolve the property at click time — safe against pooling.
+            var so   = new SerializedObject(serializedObjectTarget);
+            var prop = so.FindProperty(propertyPath);
+            if (prop != null)
+                ShowDropdown(prop, dropButton, fieldType, group, folders);
+        };
 
-		
-		if (!cache.TryGetValue(key, out List<Item> cached))
-		{
-			cached = new();
-			
-			var guids = AssetDatabase.FindAssets($"t:{fieldType.Name}",folders);
+        container.Add(objectField);
+        container.Add(dropButton);
+        return container;
+    }
 
-			foreach (string guid in guids)
-			{
-				var path = AssetDatabase.GUIDToAssetPath(guid);
-				var asset = AssetDatabase.LoadAssetAtPath(path, fieldType);
-				if (asset)
-				{
-					var foundType = asset.GetType();
-					cached.Add(new Item(path, TextureToTexture2DCache(AssetDatabase.GetCachedIcon(path)),foundType));
-					typesFound.Add(foundType);
-				}
-			}
-			cached.Sort((x,y) => String.Compare(x.Path, y.Path, StringComparison.Ordinal));
-			
-			var scriptableObjectType = typeof(ScriptableObject);
-			if (scriptableObjectType.IsAssignableFrom(fieldType))
-			{
-				typesForCreation.AddRange(TypeCache.GetTypesDerivedFrom(fieldType).Where(x=> !x.IsAbstract && !x.IsGenericType));
-			}
-			
-			if (!fieldType.IsAbstract && !fieldType.IsGenericType && !typesForCreation.Contains(fieldType))
-			{
-				typesForCreation.Add(fieldType);
-			}
-			
-			if (typesForCreation.Count == 1)
-			{
-				cached.Add(new Item($"-New-/{SelectorName.GetDisplayName(typesForCreation[0])}", null, typesForCreation[0]));
-			}
-			else
-			{
-				List<Item> creationItems = new();
+    // ── Dropdown ──────────────────────────────────────────────────────────────
 
-				for (var index = 0; index < typesForCreation.Count; index++)
-				{
-					var type = typesForCreation[index];
-					creationItems.Add(new Item($"-New-/{SelectorName.GetDisplayName(type)}", null,
-						type));
-				}
+    private void ShowDropdown(
+        SerializedProperty property,
+        VisualElement anchor,
+        Type fieldType,
+        AssetSelectorAttribute.GroupMode group,
+        string[] folders)
+    {
+        var key = BuildCacheKey(fieldType, folders);
 
-				creationItems.Sort((x,y) => String.Compare(x.Path, y.Path, StringComparison.Ordinal));
-				cached.AddRange(creationItems);
-			}
-			
-		}
+        // Rebuild cache entry if missing.
+        if (!s_cache.TryGetValue(key, out var entry))
+            entry = BuildCacheEntry(fieldType, folders);
 
-		var dropdownBuilder = new AdvancedDropdownBuilder().WithTitle($"{fieldType.Name}");
-		List<int> indices;
+        // Build creation-type list fresh every time (cheap reflection, no I/O).
+        var creationTypes = BuildCreationTypes(fieldType);
 
-		switch (group)
-		{
-			case AssetSelectorAttribute.GroupMode.None:
-				dropdownBuilder.AddElements(
-					cached.Select(x =>
-					{
-						if (x.Path.Contains("-New-"))
-						{
-							return new AdvancedDropdownPath(x.Path, x.Icon);
-						}
-						return new AdvancedDropdownPath(Path.GetFileName(x.Path), x.Icon);
-					}),
-					out indices);
-				break;
-			case AssetSelectorAttribute.GroupMode.ByPath:
-				dropdownBuilder.AddElements(cached.ConvertAll(x=> new AdvancedDropdownPath(x.Path, x.Icon)), out indices);
-				break;
-			case AssetSelectorAttribute.GroupMode.ByType:
-				if (typesFound.Count > 1)
-				{
-					dropdownBuilder.AddElements(
-						cached.Select(x =>
-						{
-							if (x.Path.Contains("-New-"))
-							{
-								var split = x.Path.Split("/");
-								return new AdvancedDropdownPath($"{split[1]}/{split[0]}", x.Icon);
-							}
-							return new AdvancedDropdownPath($"{SelectorName.GetDisplayName(x.Type)}/{Path.GetFileName(x.Path)}", x.Icon);
-						}),
-						out indices);
-				}
-				else
-				{
-					dropdownBuilder.AddElements(
-						cached.Select(x => new AdvancedDropdownPath(Path.GetFileName(x.Path), x.Icon)),
-						out indices);
-				}
-				break;
-			default:
-				throw new ArgumentOutOfRangeException();
-		}
-	
-			
-		dropdownBuilder.SetCallback(OnSelection)
-		               .Build()
-		               .Show(button.worldBound);
+        // ── Dropdown paths ────────────────────────────────────────────────────
 
-		void OnSelection(int index)
-		{
-			var assetsRange = cached.Count - typesForCreation.Count;
-			if (index < assetsRange)
-			{
-				var result = cached[indices[index]];
-				
-				var assetFound=AssetDatabase.LoadAssetAtPath<Object>(result.Path);
-				property.objectReferenceValue = assetFound; 
-				EditorUtility.SetDirty(property.serializedObject.targetObject);
-				property.serializedObject.ApplyModifiedProperties();
-			}
-			else
-			{
-				var item = cached[index];
-				var path = EditorUtility.SaveFilePanelInProject($"New {item.Type.Name}", $"New ", "asset", "");
-				if(!string.IsNullOrEmpty(path))
-				{
-					var instance = ScriptableObject.CreateInstance(item.Type);
-					AssetDatabase.CreateAsset(instance, path);
-					property.objectReferenceValue = instance;
-					EditorUtility.SetDirty(property.serializedObject.targetObject);
-					property.serializedObject.ApplyModifiedProperties();
-				}
-			}
-		}
-	}
-	
-	public Texture2D TextureToTexture2DCache(Texture sourceRenderTexture)
-	{
-		if (!icons.TryGetValue(sourceRenderTexture, out var icon))
-		{
-			if (sourceRenderTexture == null)
-			{
-				Debug.LogError("Source RenderTexture is not assigned!");
-				return null;
-			}
+        var dropdownBuilder = new AdvancedDropdownBuilder().WithTitle(fieldType.Name);
+        List<int> indices;
 
-			if (sourceRenderTexture == null) return null;
+        var displayPaths = BuildDisplayPaths(entry.Assets, creationTypes, group, entry.TypesFound).ToList();
+        dropdownBuilder.AddElements(displayPaths, out indices);
 
-			// If it's already a readable Texture2D, return it (no copy).
-			if (sourceRenderTexture is Texture2D tx2 && tx2.isReadable)
-				return tx2;
+        dropdownBuilder
+            .SetCallback(OnSelection)
+            .Build()
+            .Show(anchor.worldBound);
 
-			// Determine dimensions (fallback to 32 if unknown)
-			int w = sourceRenderTexture.width  > 0 ? sourceRenderTexture.width : 32;
-			int h = sourceRenderTexture.height > 0 ? sourceRenderTexture.height : 32;
+        // ── Selection callback ────────────────────────────────────────────────
 
-			// Create temporary RenderTexture and blit the sourceRenderTexture into it
-			var rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.Default, RenderTextureReadWrite.Linear);
-			var prev = RenderTexture.active;
-			try
-			{
-				Graphics.Blit(sourceRenderTexture, rt);
-				RenderTexture.active = rt;
+        void OnSelection(int dropdownIndex)
+        {
+            int cacheIndex = indices[dropdownIndex];
 
-				// Read back pixels into a new Texture2D (RGBA32 is safe)
-				var readable = new Texture2D(w, h, TextureFormat.RGBA32, false, true);
-				readable.ReadPixels(new Rect(0, 0, w, h), 0, 0, false);
-				readable.Apply(false, false);
+            if (cacheIndex < entry.Assets.Count)
+            {
+                // Existing asset selected.
+                var item      = entry.Assets[cacheIndex];
+                var asset     = AssetDatabase.LoadAssetAtPath<Object>(item.Path);
+                property.objectReferenceValue = asset;
+            }
+            else
+            {
+                // Creation item selected.
+                int creationIndex = cacheIndex - entry.Assets.Count;
+                if (creationIndex < 0 || creationIndex >= creationTypes.Count) return;
 
-				icons[sourceRenderTexture] = icon = readable;
-			}
-			finally
-			{
-				RenderTexture.active = prev;
-				RenderTexture.ReleaseTemporary(rt);
-			}
+                var type = creationTypes[creationIndex];
+                var path = EditorUtility.SaveFilePanelInProject(
+                    $"New {type.Name}", "New", "asset", "");
+                if (string.IsNullOrEmpty(path)) return;
 
-		}
-		return icon;
-	}
+                var instance = ScriptableObject.CreateInstance(type);
+                AssetDatabase.CreateAsset(instance, path);
+                property.objectReferenceValue = instance;
+
+                // Invalidate so the new asset appears next time.
+                s_cache.Remove(key);
+            }
+
+            EditorUtility.SetDirty(property.serializedObject.targetObject);
+            property.serializedObject.ApplyModifiedProperties();
+        }
+    }
+
+    // ── Cache building ────────────────────────────────────────────────────────
+
+    private CacheEntry BuildCacheEntry(Type fieldType, string[] folders)
+    {
+        var assets     = new List<Item>();
+        var typesFound = new HashSet<Type>();
+
+        var guids = AssetDatabase.FindAssets($"t:{fieldType.Name}", folders?.Length > 0 ? folders : null);
+        foreach (var guid in guids)
+        {
+            var path  = AssetDatabase.GUIDToAssetPath(guid);
+            var asset = AssetDatabase.LoadAssetAtPath(path, fieldType);
+            if (asset == null) continue;
+
+            var foundType = asset.GetType();
+            typesFound.Add(foundType);
+            assets.Add(new Item(path, GetCachedIcon(path), foundType));
+        }
+
+        assets.Sort((x, y) => string.Compare(x.Path, y.Path, StringComparison.Ordinal));
+
+        var entry = new CacheEntry(assets, typesFound);
+        s_cache[BuildCacheKey(fieldType, folders)] = entry;
+        return entry;
+    }
+
+    private static List<Type> BuildCreationTypes(Type fieldType)
+    {
+        var list = new List<Type>();
+
+        if (typeof(ScriptableObject).IsAssignableFrom(fieldType))
+            list.AddRange(TypeCache.GetTypesDerivedFrom(fieldType)
+                .Where(t => !t.IsAbstract && !t.IsGenericType));
+
+        if (!fieldType.IsAbstract && !fieldType.IsGenericType && !list.Contains(fieldType))
+            list.Add(fieldType);
+
+        list.Sort((x, y) => string.Compare(
+            SelectorName.GetDisplayName(x),
+            SelectorName.GetDisplayName(y),
+            StringComparison.OrdinalIgnoreCase));
+
+        return list;
+    }
+
+    private static IEnumerable<AdvancedDropdownPath> BuildDisplayPaths(
+        List<Item> assets,
+        List<Type> creationTypes,
+        AssetSelectorAttribute.GroupMode group,
+        HashSet<Type> typesFound)
+    {
+        // Asset entries
+        foreach (var item in assets)
+        {
+            // For modes that hide the path in the label, surface it as a tooltip instead.
+            string tooltip = group == AssetSelectorAttribute.GroupMode.ByPath ? null : item.Path;
+
+            yield return group switch
+            {
+                AssetSelectorAttribute.GroupMode.ByPath => new AdvancedDropdownPath(item.Path, item.Icon),
+                AssetSelectorAttribute.GroupMode.ByType when typesFound.Count > 1 =>
+                    new AdvancedDropdownPath(
+                        $"{SelectorName.GetDisplayName(item.Type)}/{Path.GetFileName(item.Path)}", item.Icon, tooltip),
+                _ => new AdvancedDropdownPath(Path.GetFileName(item.Path), item.Icon, tooltip),
+            };
+        }
+
+        // Creation entries — always shown flat under a "-New-" folder
+        foreach (var type in creationTypes)
+        {
+            yield return new AdvancedDropdownPath(
+                $"-New-/{SelectorName.GetDisplayName(type)}", null);
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private Type GetFieldType()
+    {
+        if (fieldInfo == null) return typeof(Object);
+
+        var t = fieldInfo.FieldType;
+
+        // Unwrap List<T> and T[]
+        if (t.IsArray)
+            t = t.GetElementType() ?? t;
+        else if (t.IsGenericType)
+            t = t.GetGenericArguments()[0];
+
+        if (t == typeof(Object) || t == typeof(object)) return typeof(Object);
+        return t.IsSubclassOf(typeof(Object)) ? t : typeof(Object);
+    }
+
+    private static string BuildCacheKey(Type fieldType, string[] folders) =>
+        $"{fieldType.FullName}|{(folders?.Length > 0 ? string.Join(";", folders) : "<all>")}";
+
+    private Texture2D GetCachedIcon(string assetPath)
+    {
+        var source = AssetDatabase.GetCachedIcon(assetPath);
+        if (source == null) return null;
+
+        if (s_icons.TryGetValue(source, out var weakRef) &&
+            weakRef.TryGetTarget(out var cached))
+            return cached;
+
+        // Convert to a readable Texture2D.
+        if (source is Texture2D tx && tx.isReadable)
+        {
+            s_icons[source] = new WeakReference<Texture2D>(tx);
+            return tx;
+        }
+
+        int w  = source.width  > 0 ? source.width  : 32;
+        int h  = source.height > 0 ? source.height : 32;
+        var rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.Default, RenderTextureReadWrite.Linear);
+        var prev = RenderTexture.active;
+        try
+        {
+            Graphics.Blit(source, rt);
+            RenderTexture.active = rt;
+
+            var readable = new Texture2D(w, h, TextureFormat.RGBA32, false, true);
+            readable.ReadPixels(new Rect(0, 0, w, h), 0, 0, false);
+            readable.Apply(false, false);
+
+            s_icons[source] = new WeakReference<Texture2D>(readable);
+            return readable;
+        }
+        finally
+        {
+            RenderTexture.active = prev;
+            RenderTexture.ReleaseTemporary(rt);
+        }
+    }
+
+    // ── Nested types ──────────────────────────────────────────────────────────
+
+    private sealed class CacheEntry
+    {
+        public readonly List<Item>     Assets;
+        public readonly HashSet<Type>  TypesFound;
+        public CacheEntry(List<Item> assets, HashSet<Type> typesFound)
+        {
+            Assets     = assets;
+            TypesFound = typesFound;
+        }
+    }
 }
+
+// ── Shared item struct ────────────────────────────────────────────────────────
 
 internal struct Item
 {
-	public readonly Texture2D Icon;
-	public readonly Type Type;
-	public readonly string Path;
-	public Item(string path, Texture2D icon, Type type)
-	{
-		Icon = icon;
-		Type = type;
-		Path = path;
-	}
+    public readonly Texture2D Icon;
+    public readonly Type      Type;
+    public readonly string    Path;
+
+    public Item(string path, Texture2D icon, Type type)
+    {
+        Path = path;
+        Icon = icon;
+        Type = type;
+    }
 }
