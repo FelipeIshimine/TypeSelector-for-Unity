@@ -15,10 +15,75 @@ namespace TypeSelector
     {
         private static readonly Dictionary<string, Type[]> GenericCandidatesCache = new();
 
+        // ── Palette ──────────────────────────────────────────────────────────
+        private static readonly Color PanelBg        = new(0.14f, 0.14f, 0.14f, 1f);
+        private static readonly Color PanelBorder     = new(0.25f, 0.25f, 0.25f, 1f);
+        private static readonly Color RowBgEven       = new(0.17f, 0.17f, 0.17f, 1f);
+        private static readonly Color RowBgOdd        = new(0.20f, 0.20f, 0.20f, 1f);
+        private static readonly Color AccentBlue      = new(0.22f, 0.50f, 0.90f, 1f);
+        private static readonly Color AccentBlueDark  = new(0.16f, 0.38f, 0.70f, 1f);
+        private static readonly Color AccentGreen     = new(0.22f, 0.70f, 0.44f, 1f);
+        private static readonly Color AccentGreenDark = new(0.16f, 0.52f, 0.32f, 1f);
+        private static readonly Color AccentRed       = new(0.80f, 0.26f, 0.26f, 1f);
+        private static readonly Color AccentRedDark   = new(0.60f, 0.18f, 0.18f, 1f);
+        private static readonly Color HeaderBg        = new(0.19f, 0.22f, 0.28f, 1f);
+        private static readonly Color LabelMuted      = new(0.65f, 0.65f, 0.65f, 1f);
+        private static readonly Color LabelBright     = new(0.90f, 0.90f, 0.90f, 1f);
+        private static readonly Color IndexLabel      = new(0.45f, 0.72f, 1.00f, 1f);
+        // ─────────────────────────────────────────────────────────────────────
+
         static TypeSelectorDrawer()
         {
             AssemblyReloadEvents.beforeAssemblyReload += () => GenericCandidatesCache.Clear();
         }
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+        private static void SetRadius(IStyle s, float r)
+        {
+            s.borderTopLeftRadius     = r;
+            s.borderTopRightRadius    = r;
+            s.borderBottomLeftRadius  = r;
+            s.borderBottomRightRadius = r;
+        }
+
+        private static void SetBorderColor(IStyle s, Color c)
+        {
+            s.borderTopColor    = c;
+            s.borderRightColor  = c;
+            s.borderBottomColor = c;
+            s.borderLeftColor   = c;
+        }
+
+        private static void SetBorderWidth(IStyle s, float w)
+        {
+            s.borderTopWidth    = w;
+            s.borderRightWidth  = w;
+            s.borderBottomWidth = w;
+            s.borderLeftWidth   = w;
+        }
+
+        private static void SetPadding(IStyle s, float v, float h)
+        {
+            s.paddingTop    = v; s.paddingBottom = v;
+            s.paddingLeft   = h; s.paddingRight  = h;
+        }
+
+        private static Button StyledButton(string label, Color bg, Color border, float width = -1)
+        {
+            var btn = new Button { text = label };
+            btn.style.backgroundColor = bg;
+            SetBorderColor(btn.style, border);
+            SetBorderWidth(btn.style, 1f);
+            SetRadius(btn.style, 4f);
+            SetPadding(btn.style, 3f, 8f);
+            btn.style.color      = LabelBright;
+            btn.style.fontSize   = 11;
+            btn.style.unityFontStyleAndWeight = FontStyle.Bold;
+            //btn.style.cursor     = new StyleCursor(new Cursor());
+            if (width > 0) btn.style.width = width;
+            return btn;
+        }
+        // ─────────────────────────────────────────────────────────────────────
 
         public override VisualElement CreatePropertyGUI(SerializedProperty property)
         {
@@ -32,12 +97,22 @@ namespace TypeSelector
             // Show warning only if this isn't a managed reference AND not a supported collection
             if (property.propertyType != SerializedPropertyType.ManagedReference && !IsCollectionField(fieldInfo))
             {
-                var warningBox = new VisualElement { style = { flexDirection = FlexDirection.Column, marginBottom = 4 } };
+                var warningBox = new VisualElement();
+                warningBox.style.flexDirection  = FlexDirection.Column;
+                warningBox.style.marginBottom   = 4;
+                warningBox.style.backgroundColor = new Color(0.45f, 0.18f, 0.10f, 0.6f);
+                SetRadius(warningBox.style, 4f);
+                SetPadding(warningBox.style, 4f, 6f);
+                SetBorderColor(warningBox.style, AccentRed);
+                SetBorderWidth(warningBox.style, 1f);
+
                 warningBox.Add(new PropertyField(property));
-                warningBox.Add(new Label($"WARNING: Invalid use of {nameof(TypeSelectorAttribute)} — requires [SerializeReference]")
-                {
-                    style = { color = Color.red }
-                });
+                var warnLabel = new Label($"⚠  Invalid use of {nameof(TypeSelectorAttribute)} — requires [SerializeReference]");
+                warnLabel.style.color    = new Color(1f, 0.55f, 0.45f);
+                warnLabel.style.fontSize = 10;
+                warnLabel.style.unityFontStyleAndWeight = FontStyle.Italic;
+                warnLabel.style.marginTop = 2;
+                warningBox.Add(warnLabel);
                 root.Add(warningBox);
             }
 
@@ -64,44 +139,44 @@ namespace TypeSelector
                     property.isExpanded = true;
                     var inlineParent = new VisualElement()
                     {
-	                    style =
-	                    {
-		                    flexDirection = FlexDirection.Row,
-		                    flexGrow = 1,
-		                    marginRight = 16 
-	                    }
+                        style =
+                        {
+                            flexDirection = FlexDirection.Row,
+                            flexGrow      = 1,
+                            marginRight   = 16
+                        }
                     };
                     inlineParent.Add(new Label(property.displayName)
                     {
-		                  style  =
-		                  {
-			                  width = Length.Percent(30),
-			                  maxWidth = 220,
-			                  flexGrow = 0,
-			                  flexShrink = 0,
-		                  }
+                        style =
+                        {
+                            width     = Length.Percent(30),
+                            maxWidth  = 220,
+                            flexGrow  = 0,
+                            flexShrink = 0,
+                        }
                     });
-                    
+
                     var contentContainer = new VisualElement()
                     {
-	                    style =
-	                    {
-		                    flexGrow = 1,
-		                    flexShrink = 0,
-		                    width = Length.Percent(70),
-	                    }
+                        style =
+                        {
+                            flexGrow   = 1,
+                            flexShrink = 0,
+                            width      = Length.Percent(70),
+                        }
                     };
-                    
+
                     var propertyField = new PropertyField(property)
                     {
-	                    style =
-	                    {
-		                    flexGrow = 1,
-		                    flexShrink = 1,
-	                    }
+                        style =
+                        {
+                            flexGrow   = 1,
+                            flexShrink = 1,
+                        }
                     };
                     propertyField.AddToClassList("inline");
-                
+
                     contentContainer.AddToClassList("no-foldout-container");
                     contentContainer.Add(propertyField);
                     inlineParent.Add(contentContainer);
@@ -125,7 +200,8 @@ namespace TypeSelector
 
             root.Add(container);
 
-            var typeSelectorBtn = container.Q<Button>("TypeSelector") ?? new Button() { text = "Select Type" };
+            var typeSelectorBtn = container.Q<Button>("TypeSelector") ?? StyledButton("Select Type", AccentBlueDark, AccentBlue);
+
             var activeTypeName = container.Q<Label>("TypeName") ?? new Label();
 
             activeTypeName.text = GetButtonLabel(property);
@@ -148,41 +224,88 @@ namespace TypeSelector
         // ---------- Collection UI ----------
         private VisualElement BuildCollectionGUI(SerializedProperty collectionProperty)
         {
-            var container = new VisualElement();
-            var header = new Foldout() { text = collectionProperty.displayName, value = true };
-            container.Add(header);
+            // Outer panel
+            var panel = new VisualElement();
+            panel.style.marginTop    = 4;
+            panel.style.marginBottom = 4;
+            panel.style.backgroundColor = PanelBg;
+            SetRadius(panel.style, 6f);
+            SetBorderColor(panel.style, PanelBorder);
+            SetBorderWidth(panel.style, 1f);
+            panel.style.overflow = Overflow.Hidden;
 
-            var content = new VisualElement() { style = { flexDirection = FlexDirection.Column } };
+            // Header foldout
+            var header = new Foldout { text = collectionProperty.displayName, value = true };
+            header.style.backgroundColor = HeaderBg;
+            SetPadding(header.style, 4f, 8f);
+            panel.Add(header);
+
+            var content = new VisualElement();
+            content.style.flexDirection = FlexDirection.Column;
+            content.style.paddingBottom = 6;
             header.Add(content);
 
-            var sizeRow = new VisualElement() { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
-            sizeRow.Add(new Label("Size:"));
-            var sizeField = new IntegerField() { value = collectionProperty.arraySize, style = { width = 60 } };
+            // ── Size row ─────────────────────────────────────────────────────
+            var sizeRow = BuildSizeRow(collectionProperty, content);
+            content.Add(sizeRow);
+
+            BuildElementRows(collectionProperty, content);
+            return panel;
+        }
+
+        /// Extracted helper so both initial build and rebuild can reuse it.
+        private VisualElement BuildSizeRow(SerializedProperty collectionProperty, VisualElement content)
+        {
+            var sizeRow = new VisualElement();
+            sizeRow.style.flexDirection  = FlexDirection.Row;
+            sizeRow.style.alignItems     = Align.Center;
+            sizeRow.style.marginTop      = 6;
+            sizeRow.style.marginBottom   = 4;
+            sizeRow.style.paddingLeft    = 8;
+            sizeRow.style.paddingRight   = 8;
+
+            var sizeLabel = new Label("Size");
+            sizeLabel.style.color    = LabelMuted;
+            sizeLabel.style.fontSize = 11;
+            sizeLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            sizeLabel.style.width    = 36;
+            sizeRow.Add(sizeLabel);
+
+            var sizeField = new IntegerField { value = collectionProperty.arraySize };
+            sizeField.style.width           = 52;
+            sizeField.style.marginLeft      = 4;
+            sizeField.style.backgroundColor = PanelBorder;
+            SetRadius(sizeField.style, 3f);
             sizeField.RegisterValueChangedCallback(evt =>
             {
                 int newSize = Mathf.Max(0, evt.newValue);
                 if (newSize == collectionProperty.arraySize) return;
                 collectionProperty.arraySize = newSize;
                 collectionProperty.serializedObject.ApplyModifiedProperties();
-                content.Clear();
-                content.Add(sizeRow);
-                BuildElementRows(collectionProperty, content);
+                RebuildContent(collectionProperty, content);
             });
             sizeRow.Add(sizeField);
-            var addBtn = new Button(() =>
+
+            var addBtn = StyledButton("＋ Add", AccentGreenDark, AccentGreen);
+            addBtn.style.marginLeft = 6;
+            addBtn.clicked += () =>
             {
                 collectionProperty.arraySize++;
                 collectionProperty.serializedObject.ApplyModifiedProperties();
-                content.Clear();
-                content.Add(sizeRow);
-                BuildElementRows(collectionProperty, content);
+                RebuildContent(collectionProperty, content);
                 sizeField.SetValueWithoutNotify(collectionProperty.arraySize);
-            }) { text = "Add" };
+            };
             sizeRow.Add(addBtn);
 
-            content.Add(sizeRow);
+            return sizeRow;
+        }
+
+        /// Clears and rebuilds the entire content area (size row + element rows).
+        private void RebuildContent(SerializedProperty collectionProperty, VisualElement content)
+        {
+            content.Clear();
+            content.Add(BuildSizeRow(collectionProperty, content));
             BuildElementRows(collectionProperty, content);
-            return container;
         }
 
         private void BuildElementRows(SerializedProperty collectionProperty, VisualElement parent)
@@ -191,64 +314,80 @@ namespace TypeSelector
             for (int i = 0; i < count; i++)
             {
                 var elementProp = collectionProperty.GetArrayElementAtIndex(i);
-                var row = new VisualElement() { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginTop = 2 } };
 
-                var label = new Label($"[{i}]") { style = { width = 30 } };
+                // Alternating row background
+                var row = new VisualElement();
+                row.style.flexDirection  = FlexDirection.Row;
+                row.style.alignItems     = Align.Center;
+                row.style.marginTop      = 1;
+                row.style.paddingTop     = 3;
+                row.style.paddingBottom  = 3;
+                row.style.paddingLeft    = 8;
+                row.style.paddingRight   = 8;
+                row.style.backgroundColor = (i % 2 == 0) ? RowBgEven : RowBgOdd;
+
+                // Index badge
+                var label = new Label($"[{i}]");
+                label.style.color    = IndexLabel;
+                label.style.fontSize = 11;
+                label.style.unityFontStyleAndWeight = FontStyle.Bold;
+                label.style.width    = 32;
+                label.style.flexShrink = 0;
                 row.Add(label);
 
+                // Property field
                 var elementField = new PropertyField(elementProp);
                 elementField.style.flexGrow = 1;
                 row.Add(elementField);
 
-                // Button shows actual instance type (if any) or "-null-"
-                var typeBtn = new Button() { text = GetButtonLabel(elementProp), style = { width = 140, marginLeft = 4 } };
-                // IMPORTANT: capture elementProp/collectionProperty to avoid closure mixups
+                // Type selector button (accent blue)
+                var typeBtn = StyledButton(GetButtonLabel(elementProp), AccentBlueDark, AccentBlue, 130f);
+                typeBtn.style.marginLeft = 6;
                 typeBtn.clicked += () => SelectorButtonClicked_ForElement(typeBtn, elementProp, collectionProperty);
                 row.Add(typeBtn);
 
-                var removeBtn = new Button(() =>
-                {
-                    collectionProperty.DeleteArrayElementAtIndex(i);
-                    collectionProperty.serializedObject.ApplyModifiedProperties();
-                    parent.Clear();
-                    // Rebuild the sizeRow + rows
-                    var sizeRow = new VisualElement() { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
-                    sizeRow.Add(new Label("Size:"));
-                    var sizeField2 = new IntegerField() { value = collectionProperty.arraySize, style = { width = 60 } };
-                    sizeField2.RegisterValueChangedCallback(evt =>
-                    {
-                        int newSize = Mathf.Max(0, evt.newValue);
-                        if (newSize == collectionProperty.arraySize) return;
-                        collectionProperty.arraySize = newSize;
-                        collectionProperty.serializedObject.ApplyModifiedProperties();
-                        parent.Clear();
-                        parent.Add(sizeRow);
-                        BuildElementRows(collectionProperty, parent);
-                    });
-                    sizeRow.Add(sizeField2);
-                    var addBtn2 = new Button(() =>
-                    {
-                        collectionProperty.arraySize++;
-                        collectionProperty.serializedObject.ApplyModifiedProperties();
-                        parent.Clear();
-                        parent.Add(sizeRow);
-                        BuildElementRows(collectionProperty, parent);
-                    }) { text = "Add" };
-                    sizeRow.Add(addBtn2);
+                // Separator + remove button
+                var sep = new VisualElement();
+                sep.style.width           = 1;
+                sep.style.height          = Length.Percent(70);
+                sep.style.backgroundColor = PanelBorder;
+                sep.style.marginLeft      = 6;
+                sep.style.marginRight     = 2;
+                sep.style.alignSelf       = Align.Center;
+                row.Add(sep);
 
-                    parent.Add(sizeRow);
-                    BuildElementRows(collectionProperty, parent);
-                }) { text = "Remove", style = { width = 70, marginLeft = 4 } };
+                var removeBtn = StyledButton("✕", AccentRedDark, AccentRed, 28f);
+                removeBtn.style.marginLeft = 2;
+                int capturedIndex = i;
+                removeBtn.clicked += () =>
+                {
+                    collectionProperty.DeleteArrayElementAtIndex(capturedIndex);
+                    collectionProperty.serializedObject.ApplyModifiedProperties();
+                    RebuildContent(collectionProperty, parent);
+                };
                 row.Add(removeBtn);
 
                 parent.Add(row);
+            }
+
+            // Empty state hint
+            if (count == 0)
+            {
+                var empty = new Label("— empty —");
+                empty.style.color     = LabelMuted;
+                empty.style.fontSize  = 11;
+                empty.style.unityFontStyleAndWeight = FontStyle.Italic;
+                empty.style.alignSelf = Align.Center;
+                empty.style.marginTop = 6;
+                empty.style.marginBottom = 6;
+                parent.Add(empty);
             }
         }
 
         // ---------- Selectors ----------
         private void SelectorButtonClicked_ForProperty(Button typeBtn, SerializedProperty property)
         {
-            var targetType = GetTargetType(fieldInfo); // declared field type (could be constructed generic)
+            var targetType = GetTargetType(fieldInfo);
             ShowTypeDropdownForProperty(typeBtn.worldBound, targetType, chosenType =>
             {
                 if (chosenType == null) property.managedReferenceValue = null;
@@ -261,22 +400,19 @@ namespace TypeSelector
 
         private void SelectorButtonClicked_ForElement(Button typeBtn, SerializedProperty elementProperty, SerializedProperty collectionProperty)
         {
-            // 1) Determine element declared type from the field (T in T[] or List<T>)
             var elementDeclaredType = GetElementTargetType(fieldInfo);
-            // 2) If declared type couldn't be resolved (weird custom collection), try to infer from existing element instance typename
             if (elementDeclaredType == null)
             {
                 var full = elementProperty.managedReferenceFullTypename;
                 if (!string.IsNullOrEmpty(full))
                 {
-                    // managedReferenceFullTypename format: "AssemblyName TypeFullName"
-                    var parts = full.Split(' ');
+                    var parts    = full.Split(' ');
                     var typeName = parts.Length > 1 ? string.Join(" ", parts.Skip(1)) : parts[0];
-                    elementDeclaredType = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType(typeName)).FirstOrDefault(t => t != null);
+                    elementDeclaredType = AppDomain.CurrentDomain.GetAssemblies()
+                        .Select(a => a.GetType(typeName)).FirstOrDefault(t => t != null);
                 }
             }
 
-            // 3) Fallback to object if nothing resolved (shouldn't happen for Pred<T>[] or List<Pred<T>>)
             if (elementDeclaredType == null)
             {
                 Debug.LogWarning("[TypeSelector] Could not resolve element declared type; falling back to object.");
@@ -284,7 +420,6 @@ namespace TypeSelector
             }
             Debug.Log(elementDeclaredType.Name);
 
-            // Now show the type list for the ELEMENT TYPE (this is the critical fix)
             ShowTypeDropdownForProperty(typeBtn.worldBound, elementDeclaredType, chosenType =>
             {
                 if (chosenType == null) elementProperty.managedReferenceValue = null;
@@ -292,7 +427,6 @@ namespace TypeSelector
 
                 collectionProperty.serializedObject.ApplyModifiedProperties();
                 if (typeBtn.parent != null) typeBtn.parent.Bind(collectionProperty.serializedObject);
-                // update button text to reflect current selection/instance
                 typeBtn.text = GetButtonLabel(elementProperty);
             });
         }
@@ -308,22 +442,22 @@ namespace TypeSelector
 
             if (targetType.IsArray)
             {
-	            targetType = targetType.GetElementType();
+                targetType = targetType.GetElementType();
             }
             else if (targetType.IsGenericType && targetType.GetGenericTypeDefinition() == typeof(List<>))
             {
-	            targetType = targetType.GetGenericArguments()[0];
+                targetType = targetType.GetGenericArguments()[0];
             }
 
             var unityObjectType = typeof(UnityEngine.Object);
-            var types = new List<Type>();
+            var types           = new List<Type>();
 
-            // If target is a constructed generic (Pred<Context>) handle generic definition + nested generic defs
             if (targetType.IsGenericType && !targetType.IsGenericTypeDefinition)
             {
-                var genericDef = targetType.GetGenericTypeDefinition();
-                var targetArgs = targetType.GetGenericArguments();
-                string cacheKey = (genericDef.FullName ?? genericDef.Name) + ":" + string.Join(",", targetArgs.Select(a => a.FullName ?? a.Name));
+                var genericDef  = targetType.GetGenericTypeDefinition();
+                var targetArgs  = targetType.GetGenericArguments();
+                string cacheKey = (genericDef.FullName ?? genericDef.Name) + ":" +
+                                  string.Join(",", targetArgs.Select(a => a.FullName ?? a.Name));
 
                 if (!GenericCandidatesCache.TryGetValue(cacheKey, out var cached))
                 {
@@ -334,31 +468,24 @@ namespace TypeSelector
                         {
                             Type constructed = candidate;
                             if (candidate.IsGenericTypeDefinition)
-                            {
                                 constructed = candidate.MakeGenericType(targetArgs);
-                            }
 
-                            if (constructed.IsAbstract || constructed.IsGenericTypeDefinition || unityObjectType.IsAssignableFrom(constructed))
-                                continue;
+                            if (constructed.IsAbstract || constructed.IsGenericTypeDefinition ||
+                                unityObjectType.IsAssignableFrom(constructed)) continue;
 
-                            if (!targetType.IsAssignableFrom(constructed))
-                                continue;
+                            if (!targetType.IsAssignableFrom(constructed)) continue;
 
                             list.Add(constructed);
                         }
-                        catch
-                        {
-                            // ignore construction failures
-                        }
+                        catch { /* ignore construction failures */ }
                     }
-
                     cached = list.ToArray();
                     GenericCandidatesCache[cacheKey] = cached;
                 }
-
                 types.AddRange(cached);
 
-                if (!targetType.IsAbstract && !targetType.IsGenericTypeDefinition && !unityObjectType.IsAssignableFrom(targetType))
+                if (!targetType.IsAbstract && !targetType.IsGenericTypeDefinition &&
+                    !unityObjectType.IsAssignableFrom(targetType))
                     types.Add(targetType);
             }
             else
@@ -368,7 +495,6 @@ namespace TypeSelector
                     if (!t.IsAbstract && !t.IsGenericTypeDefinition && !unityObjectType.IsAssignableFrom(t))
                         types.Add(t);
                 }
-
                 if (!targetType.IsAbstract && !targetType.IsGenericTypeDefinition)
                     types.Add(targetType);
             }
@@ -382,10 +508,12 @@ namespace TypeSelector
                 string path = null;
                 foreach (object customAttribute in type.GetCustomAttributes(typeof(SelectorNameAttribute), false))
                 {
-                    if (customAttribute is SelectorNameAttribute dropdownPathAttribute) path = dropdownPathAttribute.Name;
+                    if (customAttribute is SelectorNameAttribute dropdownPathAttribute)
+                        path = dropdownPathAttribute.Name;
                 }
-
-                pairs[i] = string.IsNullOrEmpty(path) ? new(SelectorName.GetDisplayName(type), type) : new(path, type);
+                pairs[i] = string.IsNullOrEmpty(path)
+                    ? new(SelectorName.GetDisplayName(type), type)
+                    : new(path, type);
             }
 
             pairs[^1].path = "-null-";
@@ -407,20 +535,17 @@ namespace TypeSelector
             var ft = fi.FieldType;
             if (ft.IsArray)
             {
-	            Debug.Log($"IS ARRAY {ft.GetElementType().Name}");
-	            return ft.GetElementType();
+                Debug.Log($"IS ARRAY {ft.GetElementType().Name}");
+                return ft.GetElementType();
             }
             if (ft.IsGenericType)
             {
                 var genArgs = ft.GetGenericArguments();
                 Debug.Log($"IS GENERIC {genArgs}");
-                if (genArgs.Length == 1)
-                {
-	                return genArgs[0];
-                }
-                
-                
-                var iface = ft.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+                if (genArgs.Length == 1) return genArgs[0];
+
+                var iface = ft.GetInterfaces().FirstOrDefault(i =>
+                    i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
                 if (iface != null) return iface.GetGenericArguments()[0];
             }
             return null;
@@ -434,7 +559,8 @@ namespace TypeSelector
             if (ft.IsGenericType)
             {
                 if (ft.GetGenericArguments().Length == 1) return true;
-                if (ft.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>))) return true;
+                if (ft.GetInterfaces().Any(i => i.IsGenericType &&
+                    i.GetGenericTypeDefinition() == typeof(IEnumerable<>))) return true;
             }
             return false;
         }
@@ -445,7 +571,5 @@ namespace TypeSelector
             if (managedReferenceValue != null) return SelectorName.GetDisplayName(managedReferenceValue.GetType());
             return "-null-";
         }
-
-        
     }
 }
