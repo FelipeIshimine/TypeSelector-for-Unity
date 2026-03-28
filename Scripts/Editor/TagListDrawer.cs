@@ -50,15 +50,6 @@ namespace PillsList.Editor
             headerRow.Add(countLabel);
 
             var pillsSurface = new VisualElement();
-            pillsSurface.style.backgroundColor = theme.SurfaceBackground;
-            pillsSurface.style.borderTopWidth = 1;
-            pillsSurface.style.borderRightWidth = 1;
-            pillsSurface.style.borderBottomWidth = 1;
-            pillsSurface.style.borderLeftWidth = 1;
-            pillsSurface.style.borderTopColor = theme.SurfaceBorder;
-            pillsSurface.style.borderRightColor = theme.SurfaceBorder;
-            pillsSurface.style.borderBottomColor = theme.SurfaceBorder;
-            pillsSurface.style.borderLeftColor = theme.SurfaceBorder;
             pillsSurface.style.borderTopLeftRadius = 6;
             pillsSurface.style.borderTopRightRadius = 6;
             pillsSurface.style.borderBottomLeftRadius = 6;
@@ -68,6 +59,35 @@ namespace PillsList.Editor
             pillsSurface.style.paddingTop = 4;
             pillsSurface.style.paddingBottom = 0;
             root.Add(pillsSurface);
+
+            void ApplyPillsSurfaceChrome()
+            {
+                if (EditorGUIUtility.isProSkin)
+                {
+                    pillsSurface.style.backgroundColor = ParseHtmlColor("#2A2A2A", theme.SurfaceBackground);
+                    pillsSurface.style.borderTopWidth = 1;
+                    pillsSurface.style.borderRightWidth = 1;
+                    pillsSurface.style.borderBottomWidth = 3;
+                    pillsSurface.style.borderLeftWidth = 1;
+                    pillsSurface.style.borderTopColor = ParseHtmlColor("#0D0D0D", theme.SurfaceBorder);
+                    pillsSurface.style.borderRightColor = ParseHtmlColor("#212121", theme.SurfaceBorder);
+                    pillsSurface.style.borderBottomColor = ParseHtmlColor("#212121", theme.SurfaceBorder);
+                    pillsSurface.style.borderLeftColor = ParseHtmlColor("#212121", theme.SurfaceBorder);
+                    return;
+                }
+
+                pillsSurface.style.backgroundColor = theme.SurfaceBackground;
+                pillsSurface.style.borderTopWidth = 1;
+                pillsSurface.style.borderRightWidth = 1;
+                pillsSurface.style.borderBottomWidth = 1;
+                pillsSurface.style.borderLeftWidth = 1;
+                pillsSurface.style.borderTopColor = theme.SurfaceBorder;
+                pillsSurface.style.borderRightColor = theme.SurfaceBorder;
+                pillsSurface.style.borderBottomColor = theme.SurfaceBorder;
+                pillsSurface.style.borderLeftColor = theme.SurfaceBorder;
+            }
+
+            ApplyPillsSurfaceChrome();
 
             var pillsContainer = new VisualElement();
             pillsContainer.style.flexDirection = FlexDirection.Row;
@@ -192,6 +212,37 @@ namespace PillsList.Editor
                     || TryAddRuntimeAsset(serializedObject, propertyPath, asset);
             }
 
+            bool TryReplaceChoice(int index, UnityEngine.Object asset)
+            {
+                serializedObject.Update();
+
+                var arrayProperty = GetArrayProperty();
+                if (arrayProperty != null)
+                {
+                    if (index < 0 || index >= arrayProperty.arraySize)
+                    {
+                        return false;
+                    }
+
+                    arrayProperty.GetArrayElementAtIndex(index).objectReferenceValue = asset;
+                    serializedObject.ApplyModifiedProperties();
+                    return true;
+                }
+
+                if (!TryGetRuntimeList(serializedObject, propertyPath, out var runtimeList)
+                    || index < 0
+                    || index >= runtimeList.Count)
+                {
+                    return false;
+                }
+
+                Undo.RecordObject(serializedObject.targetObject, "Replace Pill List Item");
+                runtimeList[index] = asset;
+                EditorUtility.SetDirty(serializedObject.targetObject);
+                serializedObject.Update();
+                return true;
+            }
+
             void Refresh()
             {
                 serializedObject.Update();
@@ -205,12 +256,12 @@ namespace PillsList.Editor
                 if (arrayProperty != null)
                 {
                     countLabel.text = FormatCount(arrayProperty.arraySize);
-                    AddSerializedPills(arrayProperty, pillsContainer, theme, Refresh, RegisterPillDrag);
+                    AddSerializedPills(arrayProperty, pillsContainer, theme, Refresh, RegisterPillDrag, RegisterPillReplace);
                 }
                 else if (TryGetRuntimeList(serializedObject, propertyPath, out var runtimeList))
                 {
                     countLabel.text = FormatCount(runtimeList.Count);
-                    AddRuntimePills(runtimeList, pillsContainer, serializedObject, theme, Refresh, RegisterPillDrag);
+                    AddRuntimePills(runtimeList, pillsContainer, serializedObject, theme, Refresh, RegisterPillDrag, RegisterPillReplace);
                 }
                 else
                 {
@@ -221,7 +272,7 @@ namespace PillsList.Editor
                 pillsContainer.Add(addButton);
             }
 
-            void OpenAddPopup()
+            void ShowAssetDropdown(Rect anchor, string title, Action<UnityEngine.Object> onSelect)
             {
                 RebuildAssetChoices();
 
@@ -230,15 +281,18 @@ namespace PillsList.Editor
                     return;
                 }
 
-                var dropdownItems = new List<(string, Texture2D)>(assetChoices.Count);
+                var dropdownItems = new List<AdvancedDropdownPath>(assetChoices.Count);
                 for (var index = 0; index < assetChoices.Count; index++)
                 {
                     var choice = assetChoices[index];
-                    dropdownItems.Add((choice.Name, AssetPreview.GetMiniThumbnail(choice.Asset)));
+                    dropdownItems.Add(new AdvancedDropdownPath(
+                        choice.Name,
+                        AssetPreview.GetMiniThumbnail(choice.Asset),
+                        choice.PathLabel));
                 }
 
                 var builder = new AdvancedDropdownBuilder()
-                    .WithTitle($"Add {ObjectNames.NicifyVariableName(objectType.Name)}")
+                    .WithTitle(title)
                     .SetCallback(index =>
                     {
                         if (index < 0 || index >= assetChoices.Count)
@@ -246,16 +300,53 @@ namespace PillsList.Editor
                             return;
                         }
 
-                        if (!TryAddChoice(assetChoices[index].Asset))
+                        onSelect?.Invoke(assetChoices[index].Asset);
+                    });
+
+                builder.AddElements(dropdownItems, out _);
+                builder.Build().Show(anchor);
+            }
+
+            void OpenAddPopup()
+            {
+                ShowAssetDropdown(
+                    addButton.worldBound,
+                    $"Add {ObjectNames.NicifyVariableName(objectType.Name)}",
+                    asset =>
+                    {
+                        if (!TryAddChoice(asset))
                         {
                             return;
                         }
 
                         Refresh();
                     });
+            }
 
-                builder.AddElements(dropdownItems, out _);
-                builder.Build().Show(addButton.worldBound);
+            void RegisterPillReplace(VisualElement pill, int index, UnityEngine.Object reference)
+            {
+                pill.RegisterCallback<PointerDownEvent>(evt =>
+                {
+                    if (evt.button != 1 || evt.target is Button)
+                    {
+                        return;
+                    }
+
+                    ResetDraggedPill();
+                    evt.StopPropagation();
+                    ShowAssetDropdown(
+                        pill.worldBound,
+                        $"Replace {ObjectNames.NicifyVariableName(objectType.Name)}",
+                        asset =>
+                        {
+                            if (asset == reference || !TryReplaceChoice(index, asset))
+                            {
+                                return;
+                            }
+
+                            Refresh();
+                        });
+                });
             }
 
             addButton.clicked += OpenAddPopup;
@@ -538,7 +629,8 @@ namespace PillsList.Editor
             VisualElement pillsContainer,
             Theme theme,
             Action refresh,
-            Action<VisualElement, int> registerReorder)
+            Action<VisualElement, int> registerReorder,
+            Action<VisualElement, int, UnityEngine.Object> registerReplace)
         {
             if (arrayProperty.arraySize == 0)
             {
@@ -551,6 +643,7 @@ namespace PillsList.Editor
                 var element = arrayProperty.GetArrayElementAtIndex(index);
                 var pill = CreateSerializedPill(arrayProperty, element, index, theme, refresh);
                 registerReorder?.Invoke(pill, index);
+                registerReplace?.Invoke(pill, index, element.objectReferenceValue);
                 pillsContainer.Add(pill);
             }
         }
@@ -561,7 +654,8 @@ namespace PillsList.Editor
             SerializedObject serializedObject,
             Theme theme,
             Action refresh,
-            Action<VisualElement, int> registerReorder)
+            Action<VisualElement, int> registerReorder,
+            Action<VisualElement, int, UnityEngine.Object> registerReplace)
         {
             if (runtimeList.Count == 0)
             {
@@ -574,6 +668,7 @@ namespace PillsList.Editor
                 var reference = runtimeList[index] as UnityEngine.Object;
                 var pill = CreateRuntimePill(runtimeList, serializedObject, reference, index, theme, refresh);
                 registerReorder?.Invoke(pill, index);
+                registerReplace?.Invoke(pill, index, reference);
                 pillsContainer.Add(pill);
             }
         }
@@ -642,10 +737,10 @@ namespace PillsList.Editor
         {
             var pillName = reference == null ? "Missing" : reference.name;
             var accentColor = GetPillAccentColor(pillName);
-            var pillBackground = BlendColor(theme.PillBackground, accentColor, 0.20f);
-            var pillBorder = BlendColor(theme.PillBorder, accentColor, 0.42f);
-            var pillHoverBackground = BlendColor(theme.PillHoverBackground, accentColor, 0.28f);
-            var pillHoverBorder = BlendColor(theme.PillHoverBorder, accentColor, 0.56f);
+            var pillBackground = theme.PillBackground;
+            var pillBorder = theme.PillBorder;
+            var pillHoverBackground = theme.PillHoverBackground;
+            var pillHoverBorder = theme.PillHoverBorder;
 
             var pill = new VisualElement();
             pill.style.flexDirection = FlexDirection.Row;
@@ -659,26 +754,42 @@ namespace PillsList.Editor
             pill.style.borderRightColor = pillBorder;
             pill.style.borderBottomColor = pillBorder;
             pill.style.borderLeftColor = pillBorder;
-            pill.style.borderTopLeftRadius = 7;
-            pill.style.borderTopRightRadius = 7;
-            pill.style.borderBottomLeftRadius = 7;
-            pill.style.borderBottomRightRadius = 7;
-            pill.style.paddingLeft = 8;
-            pill.style.paddingRight = 4;
-            pill.style.paddingTop = 2;
-            pill.style.paddingBottom = 2;
+            pill.style.borderTopLeftRadius = 8;
+            pill.style.borderTopRightRadius = 8;
+            pill.style.borderBottomLeftRadius = 8;
+            pill.style.borderBottomRightRadius = 8;
+            pill.style.paddingLeft = 6;
+            pill.style.paddingRight = 3;
+            pill.style.paddingTop = 1;
+            pill.style.paddingBottom = 1;
             pill.style.marginLeft = 4;
             pill.style.marginBottom = 4;
-            pill.style.minHeight = 20;
+            pill.style.minHeight = 18;
 
             var label = new Label(pillName);
             label.style.color = theme.PillText;
-            label.style.fontSize = 11;
+            label.style.fontSize = 10;
+            label.style.unityFontStyleAndWeight = FontStyle.Bold;
             label.style.flexShrink = 0;
             pill.Add(label);
 
+            var actionSlot = new VisualElement();
+            actionSlot.style.position = Position.Relative;
+            actionSlot.style.width = 14;
+            actionSlot.style.height = 14;
+            actionSlot.style.marginLeft = 4;
+            actionSlot.style.flexShrink = 0;
+
+            var chipIndicator = CreatePillIndicator(accentColor);
+            actionSlot.Add(chipIndicator);
+
             var removeButton = CreateRemoveButton(theme, onRemove);
-            pill.Add(removeButton);
+            removeButton.style.position = Position.Absolute;
+            removeButton.style.left = 0;
+            removeButton.style.top = 0;
+            removeButton.style.display = DisplayStyle.None;
+            actionSlot.Add(removeButton);
+            pill.Add(actionSlot);
 
             pill.RegisterCallback<MouseEnterEvent>(_ =>
             {
@@ -687,9 +798,8 @@ namespace PillsList.Editor
                 pill.style.borderRightColor = pillHoverBorder;
                 pill.style.borderBottomColor = pillHoverBorder;
                 pill.style.borderLeftColor = pillHoverBorder;
-                removeButton.style.backgroundColor = theme.RemoveButtonHoverBackground;
-                removeButton.style.color = theme.RemoveButtonTextHover;
-                removeButton.style.opacity = 1f;
+                chipIndicator.style.display = DisplayStyle.None;
+                removeButton.style.display = DisplayStyle.Flex;
             });
             pill.RegisterCallback<MouseLeaveEvent>(_ =>
             {
@@ -698,9 +808,8 @@ namespace PillsList.Editor
                 pill.style.borderRightColor = pillBorder;
                 pill.style.borderBottomColor = pillBorder;
                 pill.style.borderLeftColor = pillBorder;
-                removeButton.style.backgroundColor = theme.RemoveButtonBackground;
-                removeButton.style.color = theme.RemoveButtonText;
-                removeButton.style.opacity = 0f;
+                chipIndicator.style.display = DisplayStyle.Flex;
+                removeButton.style.display = DisplayStyle.None;
             });
 
             return pill;
@@ -719,21 +828,36 @@ namespace PillsList.Editor
 
                 var huePalette = new[]
                 {
-                    0.01f,
-                    0.06f,
-                    0.10f,
-                    0.15f,
-                    0.22f,
+                    0.00f,
+                    0.03f,
+                    0.07f,
+                    0.11f,
+                    0.16f,
+                    0.20f,
+                    0.25f,
                     0.30f,
-                    0.40f,
-                    0.78f,
-                    0.92f,
+                    0.36f,
+                    0.42f,
+                    0.49f,
+                    0.56f,
+                    0.62f,
+                    0.69f,
+                    0.76f,
+                    0.84f,
+                    0.91f,
+                    0.96f,
                 };
                 var paletteIndex = (int)(hash % (uint)huePalette.Length);
-                var paletteOffset = ((hash / (uint)huePalette.Length) % 100u) / 100f;
-                var hue = Mathf.Repeat(huePalette[paletteIndex] + Mathf.Lerp(-0.025f, 0.025f, paletteOffset), 1f);
-                var saturation = EditorGUIUtility.isProSkin ? 0.46f : 0.36f;
-                var value = EditorGUIUtility.isProSkin ? 0.78f : 0.68f;
+                var hueOffset = ((hash / (uint)huePalette.Length) % 100u) / 100f;
+                var saturationOffset = ((hash >> 8) & 0xFFu) / 255f;
+                var valueOffset = ((hash >> 16) & 0xFFu) / 255f;
+                var hue = Mathf.Repeat(huePalette[paletteIndex] + Mathf.Lerp(-0.02f, 0.02f, hueOffset), 1f);
+                var saturation = EditorGUIUtility.isProSkin
+                    ? Mathf.Lerp(0.50f, 0.68f, saturationOffset)
+                    : Mathf.Lerp(0.40f, 0.60f, saturationOffset);
+                var value = EditorGUIUtility.isProSkin
+                    ? Mathf.Lerp(0.74f, 0.88f, valueOffset)
+                    : Mathf.Lerp(0.60f, 0.76f, valueOffset);
                 return Color.HSVToRGB(hue, saturation, value);
             }
         }
@@ -745,6 +869,13 @@ namespace PillsList.Editor
                 Mathf.Lerp(baseColor.g, accentColor.g, amount),
                 Mathf.Lerp(baseColor.b, accentColor.b, amount),
                 baseColor.a);
+        }
+
+        private static Color ParseHtmlColor(string htmlString, Color fallback)
+        {
+            return ColorUtility.TryParseHtmlString(htmlString, out var color)
+                ? color
+                : fallback;
         }
 
         private static Button CreateInlineAddButton(Theme theme)
@@ -802,22 +933,47 @@ namespace PillsList.Editor
             return addButton;
         }
 
+        private static VisualElement CreatePillIndicator(Color accentColor)
+        {
+            var indicator = new VisualElement();
+            indicator.style.width = 14;
+            indicator.style.height = 14;
+            indicator.style.alignItems = Align.Center;
+            indicator.style.justifyContent = Justify.Center;
+            indicator.pickingMode = PickingMode.Ignore;
+
+            var dot = new VisualElement();
+            dot.style.width = 6;
+            dot.style.height = 6;
+            dot.style.backgroundColor = accentColor;
+            dot.style.borderTopLeftRadius = 3;
+            dot.style.borderTopRightRadius = 3;
+            dot.style.borderBottomLeftRadius = 3;
+            dot.style.borderBottomRightRadius = 3;
+            dot.style.opacity = 0.95f;
+            dot.pickingMode = PickingMode.Ignore;
+
+            indicator.Add(dot);
+            return indicator;
+        }
+
         private static Button CreateRemoveButton(Theme theme, Action onClick)
         {
             var removeButton = new Button(onClick)
             {
                 text = "x"
             };
-            removeButton.style.marginLeft = 5;
-            removeButton.style.minWidth = 16;
-            removeButton.style.width = 16;
-            removeButton.style.height = 16;
+            removeButton.style.alignItems = Align.Center;
+            removeButton.style.justifyContent = Justify.Center;
+            removeButton.style.minWidth = 14;
+            removeButton.style.width = 14;
+            removeButton.style.height = 14;
             removeButton.style.paddingLeft = 0;
             removeButton.style.paddingRight = 0;
             removeButton.style.paddingTop = 0;
             removeButton.style.paddingBottom = 0;
-            removeButton.style.backgroundColor = theme.RemoveButtonBackground;
-            removeButton.style.color = theme.RemoveButtonText;
+            removeButton.style.backgroundColor = theme.RemoveButtonHoverBackground;
+            removeButton.style.color = theme.RemoveButtonTextHover;
             removeButton.style.borderTopWidth = 0;
             removeButton.style.borderRightWidth = 0;
             removeButton.style.borderBottomWidth = 0;
@@ -826,8 +982,9 @@ namespace PillsList.Editor
             removeButton.style.borderTopRightRadius = 4;
             removeButton.style.borderBottomLeftRadius = 4;
             removeButton.style.borderBottomRightRadius = 4;
-            removeButton.style.fontSize = 10;
-            removeButton.style.opacity = 0f;
+            removeButton.style.fontSize = 9;
+            removeButton.style.unityFontStyleAndWeight = FontStyle.Bold;
+            removeButton.style.unityTextAlign = TextAnchor.MiddleCenter;
             return removeButton;
         }
 
@@ -846,7 +1003,7 @@ namespace PillsList.Editor
         {
             pill.RegisterCallback<ClickEvent>(evt =>
             {
-                if (evt.target is Button || reference == null)
+                if (evt.button != 0 || evt.target is Button || reference == null)
                 {
                     return;
                 }
@@ -924,8 +1081,8 @@ namespace PillsList.Editor
                 if (EditorGUIUtility.isProSkin)
                 {
                     return new Theme(
-                        new Color(0.18f, 0.18f, 0.18f, 1f),
-                        new Color(0.24f, 0.24f, 0.24f, 1f),
+                        new Color(0.13f, 0.13f, 0.13f, 1f),
+                        new Color(0.09f, 0.09f, 0.09f, 1f),
                         new Color(0.88f, 0.88f, 0.88f, 1f),
                         new Color(0.60f, 0.60f, 0.60f, 1f),
                         new Color(0.25f, 0.31f, 0.39f, 1f),
@@ -953,8 +1110,8 @@ namespace PillsList.Editor
                 }
 
                 return new Theme(
-                    new Color(0.94f, 0.94f, 0.94f, 1f),
-                    new Color(0.77f, 0.77f, 0.77f, 1f),
+                    new Color(1.00f, 1.00f, 1.00f, 1f),
+                    new Color(0.69f, 0.69f, 0.69f, 1f),
                     new Color(0.15f, 0.15f, 0.15f, 1f),
                     new Color(0.45f, 0.45f, 0.45f, 1f),
                     new Color(0.89f, 0.92f, 0.96f, 1f),
