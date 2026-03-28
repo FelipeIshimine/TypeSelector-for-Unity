@@ -31,25 +31,22 @@ namespace PillsList.Editor
 
             var root = new VisualElement();
             root.style.marginBottom = 4;
-
-            var headerRow = new VisualElement();
-            headerRow.style.flexDirection = FlexDirection.Row;
-            headerRow.style.alignItems = Align.Center;
-            headerRow.style.justifyContent = Justify.SpaceBetween;
-            headerRow.style.marginBottom = 4;
-            root.Add(headerRow);
+            root.style.flexDirection = FlexDirection.Row;
+            root.style.alignItems = Align.FlexStart;
+            root.AddToClassList("unity-base-field");
+            root.AddToClassList("unity-base-field__aligned");
 
             var title = new Label(property.displayName);
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.AddToClassList("unity-base-field__label");
+            title.style.unityFontStyleAndWeight = FontStyle.Normal;
             title.style.color = theme.TitleText;
-            headerRow.Add(title);
-
-            var countLabel = new Label();
-            countLabel.style.fontSize = 10;
-            countLabel.style.color = theme.SecondaryText;
-            headerRow.Add(countLabel);
+            title.style.flexShrink = 0;
+            root.Add(title);
 
             var pillsSurface = new VisualElement();
+            pillsSurface.style.flexGrow = 1;
+            pillsSurface.style.flexShrink = 1;
+            pillsSurface.style.minWidth = 0;
             pillsSurface.style.borderTopLeftRadius = 6;
             pillsSurface.style.borderTopRightRadius = 6;
             pillsSurface.style.borderBottomLeftRadius = 6;
@@ -62,6 +59,7 @@ namespace PillsList.Editor
 
             void ApplyPillsSurfaceChrome()
             {
+	            return;
                 if (EditorGUIUtility.isProSkin)
                 {
                     pillsSurface.style.backgroundColor = ParseHtmlColor("#2A2A2A", theme.SurfaceBackground);
@@ -255,17 +253,17 @@ namespace PillsList.Editor
                 var arrayProperty = GetArrayProperty();
                 if (arrayProperty != null)
                 {
-                    countLabel.text = FormatCount(arrayProperty.arraySize);
+                    title.tooltip = FormatCount(arrayProperty.arraySize);
                     AddSerializedPills(arrayProperty, pillsContainer, theme, Refresh, RegisterPillDrag, RegisterPillReplace);
                 }
                 else if (TryGetRuntimeList(serializedObject, propertyPath, out var runtimeList))
                 {
-                    countLabel.text = FormatCount(runtimeList.Count);
+                    title.tooltip = FormatCount(runtimeList.Count);
                     AddRuntimePills(runtimeList, pillsContainer, serializedObject, theme, Refresh, RegisterPillDrag, RegisterPillReplace);
                 }
                 else
                 {
-                    countLabel.text = "Unavailable";
+                    title.tooltip = "Unavailable";
                     pillsContainer.Add(CreateInfoLabel("Could not resolve the list data for this field.", theme));
                 }
 
@@ -787,7 +785,9 @@ namespace PillsList.Editor
             removeButton.style.position = Position.Absolute;
             removeButton.style.left = 0;
             removeButton.style.top = 0;
+            removeButton.style.bottom = 0;
             removeButton.style.display = DisplayStyle.None;
+            removeButton.style.height = new StyleLength(Length.Percent(100));
             actionSlot.Add(removeButton);
             pill.Add(actionSlot);
 
