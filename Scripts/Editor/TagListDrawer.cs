@@ -1,0 +1,1068 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using UnityEditor;
+using UnityEditor.UIElements;
+using UnityEngine;
+using UnityEngine.UIElements;
+
+namespace PillsList.Editor
+{
+    [CustomPropertyDrawer(typeof(TagsList<>), true)]
+    public sealed class TagListDrawer : PropertyDrawer
+    {
+        public override VisualElement CreatePropertyGUI(SerializedProperty property)
+        {
+            var propertyPath = property.propertyPath;
+            var serializedObject = property.serializedObject;
+            var objectType = GetElementType();
+            var theme = Theme.Create();
+
+            SerializedProperty GetRootProperty()
+            {
+                return serializedObject.FindProperty(propertyPath);
+            }
+
+            SerializedProperty GetArrayProperty()
+            {
+                return ResolveArrayProperty(GetRootProperty());
+            }
+
+            var root = new VisualElement();
+            root.style.marginBottom = 4;
+
+            var headerRow = new VisualElement();
+            headerRow.style.flexDirection = FlexDirection.Row;
+            headerRow.style.alignItems = Align.Center;
+            headerRow.style.justifyContent = Justify.SpaceBetween;
+            headerRow.style.marginBottom = 4;
+            root.Add(headerRow);
+
+            var title = new Label(property.displayName);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.color = theme.TitleText;
+            headerRow.Add(title);
+
+            var countLabel = new Label();
+            countLabel.style.fontSize = 10;
+            countLabel.style.color = theme.SecondaryText;
+            headerRow.Add(countLabel);
+
+            var pillsSurface = new VisualElement();
+            pillsSurface.style.backgroundColor = theme.SurfaceBackground;
+            pillsSurface.style.borderTopWidth = 1;
+            pillsSurface.style.borderRightWidth = 1;
+            pillsSurface.style.borderBottomWidth = 1;
+            pillsSurface.style.borderLeftWidth = 1;
+            pillsSurface.style.borderTopColor = theme.SurfaceBorder;
+            pillsSurface.style.borderRightColor = theme.SurfaceBorder;
+            pillsSurface.style.borderBottomColor = theme.SurfaceBorder;
+            pillsSurface.style.borderLeftColor = theme.SurfaceBorder;
+            pillsSurface.style.borderTopLeftRadius = 6;
+            pillsSurface.style.borderTopRightRadius = 6;
+            pillsSurface.style.borderBottomLeftRadius = 6;
+            pillsSurface.style.borderBottomRightRadius = 6;
+            pillsSurface.style.paddingLeft = 4;
+            pillsSurface.style.paddingRight = 4;
+            pillsSurface.style.paddingTop = 4;
+            pillsSurface.style.paddingBottom = 0;
+            root.Add(pillsSurface);
+
+            var pillsContainer = new VisualElement();
+            pillsContainer.style.flexDirection = FlexDirection.Row;
+            pillsContainer.style.flexWrap = Wrap.Wrap;
+            pillsContainer.style.alignItems = Align.FlexStart;
+            pillsContainer.style.justifyContent = Justify.FlexEnd;
+            pillsSurface.Add(pillsContainer);
+
+            var addButton = CreateInlineAddButton(theme);
+            var reorderablePills = new List<VisualElement>();
+            List<AssetChoice> assetChoices = new List<AssetChoice>();
+            VisualElement draggedPill = null;
+            int draggedIndex = -1;
+
+            void ResetDraggedPill()
+            {
+                if (draggedPill != null)
+                {
+                    draggedPill.style.opacity = 1f;
+                    draggedPill = null;
+                }
+
+                draggedIndex = -1;
+            }
+
+            int GetDropIndex(Vector2 position)
+            {
+                for (var index = 0; index < reorderablePills.Count; index++)
+                {
+                    var pill = reorderablePills[index];
+                    if (pill == null || pill == draggedPill || !pill.worldBound.Contains(position))
+                    {
+                        continue;
+                    }
+
+                    if (pill.userData is int pillIndex)
+                    {
+                        return pillIndex;
+                    }
+                }
+
+                return draggedIndex;
+            }
+
+            bool TryReorderChoice(int fromIndex, int toIndex)
+            {
+                if (fromIndex < 0 || toIndex < 0 || fromIndex == toIndex)
+                {
+                    return false;
+                }
+
+                serializedObject.Update();
+                var arrayProperty = GetArrayProperty();
+                if (arrayProperty != null)
+                {
+                    if (fromIndex >= arrayProperty.arraySize || toIndex >= arrayProperty.arraySize)
+                    {
+                        return false;
+                    }
+
+                    arrayProperty.MoveArrayElement(fromIndex, toIndex);
+                    serializedObject.ApplyModifiedProperties();
+                    return true;
+                }
+
+                if (!TryGetRuntimeList(serializedObject, propertyPath, out var runtimeList)
+                    || fromIndex >= runtimeList.Count
+                    || toIndex >= runtimeList.Count)
+                {
+                    return false;
+                }
+
+                Undo.RecordObject(serializedObject.targetObject, "Reorder Pill List Item");
+                var item = runtimeList[fromIndex];
+                runtimeList.RemoveAt(fromIndex);
+                runtimeList.Insert(toIndex, item);
+                EditorUtility.SetDirty(serializedObject.targetObject);
+                serializedObject.Update();
+                return true;
+            }
+
+            void RegisterPillDrag(VisualElement pill, int index)
+            {
+                pill.userData = index;
+                reorderablePills.Add(pill);
+
+                pill.RegisterCallback<PointerDownEvent>(evt =>
+                {
+                    if (evt.button != 0 || evt.target is Button)
+                    {
+                        return;
+                    }
+
+                    ResetDraggedPill();
+                    draggedPill = pill;
+                    draggedIndex = index;
+                    draggedPill.style.opacity = 0.55f;
+                });
+            }
+
+            void RebuildAssetChoices()
+            {
+                assetChoices = FindAssetsForType(objectType);
+                addButton.SetEnabled(assetChoices.Count > 0);
+                addButton.tooltip = assetChoices.Count > 0
+                    ? $"Add {objectType.Name}"
+                    : $"No {objectType.Name} assets found";
+            }
+
+            void CloseAddPopup()
+            {
+                addButton.style.backgroundColor = theme.AddButtonBackground;
+                addButton.style.borderTopColor = theme.AddButtonBorder;
+                addButton.style.borderRightColor = theme.AddButtonBorder;
+                addButton.style.borderBottomColor = theme.AddButtonBorder;
+                addButton.style.borderLeftColor = theme.AddButtonBorder;
+            }
+
+            bool TryAddChoice(UnityEngine.Object asset)
+            {
+                return TryAddAsset(serializedObject, GetArrayProperty, asset)
+                    || TryAddRuntimeAsset(serializedObject, propertyPath, asset);
+            }
+
+            void Refresh()
+            {
+                serializedObject.Update();
+                RebuildAssetChoices();
+                CloseAddPopup();
+                ResetDraggedPill();
+                reorderablePills.Clear();
+                pillsContainer.Clear();
+
+                var arrayProperty = GetArrayProperty();
+                if (arrayProperty != null)
+                {
+                    countLabel.text = FormatCount(arrayProperty.arraySize);
+                    AddSerializedPills(arrayProperty, pillsContainer, theme, Refresh, RegisterPillDrag);
+                }
+                else if (TryGetRuntimeList(serializedObject, propertyPath, out var runtimeList))
+                {
+                    countLabel.text = FormatCount(runtimeList.Count);
+                    AddRuntimePills(runtimeList, pillsContainer, serializedObject, theme, Refresh, RegisterPillDrag);
+                }
+                else
+                {
+                    countLabel.text = "Unavailable";
+                    pillsContainer.Add(CreateInfoLabel("Could not resolve the list data for this field.", theme));
+                }
+
+                pillsContainer.Add(addButton);
+            }
+
+            void OpenAddPopup()
+            {
+                RebuildAssetChoices();
+
+                if (assetChoices.Count == 0 || root.panel == null)
+                {
+                    return;
+                }
+
+                var dropdownItems = new List<(string, Texture2D)>(assetChoices.Count);
+                for (var index = 0; index < assetChoices.Count; index++)
+                {
+                    var choice = assetChoices[index];
+                    dropdownItems.Add((choice.Name, AssetPreview.GetMiniThumbnail(choice.Asset)));
+                }
+
+                var builder = new AdvancedDropdownBuilder()
+                    .WithTitle($"Add {ObjectNames.NicifyVariableName(objectType.Name)}")
+                    .SetCallback(index =>
+                    {
+                        if (index < 0 || index >= assetChoices.Count)
+                        {
+                            return;
+                        }
+
+                        if (!TryAddChoice(assetChoices[index].Asset))
+                        {
+                            return;
+                        }
+
+                        Refresh();
+                    });
+
+                builder.AddElements(dropdownItems, out _);
+                builder.Build().Show(addButton.worldBound);
+            }
+
+            addButton.clicked += OpenAddPopup;
+            root.TrackSerializedObjectValue(serializedObject, _ => Refresh());
+            root.RegisterCallback<PointerUpEvent>(evt =>
+            {
+                if (draggedPill == null)
+                {
+                    return;
+                }
+
+                var sourceIndex = draggedIndex;
+                var targetIndex = GetDropIndex(evt.position);
+                ResetDraggedPill();
+
+                if (!TryReorderChoice(sourceIndex, targetIndex))
+                {
+                    return;
+                }
+
+                Refresh();
+                evt.StopPropagation();
+            });
+            root.RegisterCallback<MouseLeaveEvent>(_ => ResetDraggedPill());
+            root.RegisterCallback<DetachFromPanelEvent>(_ =>
+            {
+                ResetDraggedPill();
+                CloseAddPopup();
+            });
+
+            Refresh();
+            return root;
+        }
+
+        private Type GetElementType()
+        {
+            var type = fieldInfo.FieldType;
+
+            while (type != null)
+            {
+                if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(TagsList<>))
+                {
+                    return type.GetGenericArguments()[0];
+                }
+
+                type = type.BaseType;
+            }
+
+            return typeof(ScriptableObject);
+        }
+
+        private bool TryGetRuntimeList(SerializedObject serializedObject, string propertyPath, out IList runtimeList)
+        {
+            runtimeList = null;
+
+            if (serializedObject.isEditingMultipleObjects || serializedObject.targetObject == null || fieldInfo == null)
+            {
+                return false;
+            }
+
+            if (!TryGetFieldOwner(serializedObject.targetObject, propertyPath, out var fieldOwner) || fieldOwner == null)
+            {
+                return false;
+            }
+
+            if (fieldInfo.DeclaringType != null && !fieldInfo.DeclaringType.IsInstanceOfType(fieldOwner))
+            {
+                return false;
+            }
+
+            var fieldValue = fieldInfo.GetValue(fieldOwner);
+            if (fieldValue == null)
+            {
+                if (fieldInfo.FieldType.IsAbstract || fieldInfo.FieldType.ContainsGenericParameters)
+                {
+                    return false;
+                }
+
+                if (!typeof(IList).IsAssignableFrom(fieldInfo.FieldType))
+                {
+                    return false;
+                }
+
+                var constructor = fieldInfo.FieldType.GetConstructor(Type.EmptyTypes);
+                if (constructor == null)
+                {
+                    return false;
+                }
+
+                fieldValue = constructor.Invoke(null);
+                fieldInfo.SetValue(fieldOwner, fieldValue);
+                EditorUtility.SetDirty(serializedObject.targetObject);
+                serializedObject.Update();
+            }
+
+            runtimeList = fieldValue as IList;
+            return runtimeList != null;
+        }
+
+        private static bool TryGetFieldOwner(object targetObject, string propertyPath, out object fieldOwner)
+        {
+            fieldOwner = targetObject;
+            if (fieldOwner == null || string.IsNullOrEmpty(propertyPath))
+            {
+                return false;
+            }
+
+            var normalizedPath = propertyPath.Replace(".Array.data[", "[");
+            var pathElements = normalizedPath.Split('.');
+            for (var index = 0; index < pathElements.Length - 1; index++)
+            {
+                if (!TryGetPathElementValue(fieldOwner, pathElements[index], out fieldOwner) || fieldOwner == null)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryGetPathElementValue(object source, string pathElement, out object value)
+        {
+            value = null;
+            if (source == null || string.IsNullOrEmpty(pathElement))
+            {
+                return false;
+            }
+
+            var bracketIndex = pathElement.IndexOf('[');
+            if (bracketIndex < 0)
+            {
+                return TryGetMemberValue(source, pathElement, out value);
+            }
+
+            var memberName = pathElement.Substring(0, bracketIndex);
+            if (!TryGetMemberValue(source, memberName, out var collection) || collection == null)
+            {
+                return false;
+            }
+
+            var endBracketIndex = pathElement.IndexOf(']', bracketIndex + 1);
+            if (endBracketIndex <= bracketIndex + 1)
+            {
+                return false;
+            }
+
+            if (!int.TryParse(pathElement.Substring(bracketIndex + 1, endBracketIndex - bracketIndex - 1), out var itemIndex))
+            {
+                return false;
+            }
+
+            return TryGetIndexedValue(collection, itemIndex, out value);
+        }
+
+        private static bool TryGetMemberValue(object source, string memberName, out object value)
+        {
+            value = null;
+            var type = source.GetType();
+            while (type != null)
+            {
+                var field = type.GetField(memberName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (field != null)
+                {
+                    value = field.GetValue(source);
+                    return true;
+                }
+
+                var property = type.GetProperty(memberName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (property != null)
+                {
+                    value = property.GetValue(source, null);
+                    return true;
+                }
+
+                type = type.BaseType;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetIndexedValue(object collection, int index, out object value)
+        {
+            value = null;
+
+            if (collection is IList list)
+            {
+                if (index < 0 || index >= list.Count)
+                {
+                    return false;
+                }
+
+                value = list[index];
+                return true;
+            }
+
+            if (collection is Array array)
+            {
+                if (index < 0 || index >= array.Length)
+                {
+                    return false;
+                }
+
+                value = array.GetValue(index);
+                return true;
+            }
+
+            return false;
+        }
+        private bool TryAddAsset(
+            SerializedObject serializedObject,
+            Func<SerializedProperty> getArrayProperty,
+            UnityEngine.Object asset)
+        {
+            serializedObject.Update();
+
+            var arrayProperty = getArrayProperty();
+            if (arrayProperty == null)
+            {
+                return false;
+            }
+
+            var newIndex = arrayProperty.arraySize;
+            arrayProperty.InsertArrayElementAtIndex(newIndex);
+            arrayProperty.GetArrayElementAtIndex(newIndex).objectReferenceValue = asset;
+            serializedObject.ApplyModifiedProperties();
+            return true;
+        }
+
+        private bool TryAddRuntimeAsset(SerializedObject serializedObject, string propertyPath, UnityEngine.Object asset)
+        {
+            if (!TryGetRuntimeList(serializedObject, propertyPath, out var runtimeList))
+            {
+                return false;
+            }
+
+            Undo.RecordObject(serializedObject.targetObject, "Add Pill List Item");
+            runtimeList.Add(asset);
+            EditorUtility.SetDirty(serializedObject.targetObject);
+            serializedObject.Update();
+            return true;
+        }
+
+        private static SerializedProperty ResolveArrayProperty(SerializedProperty property)
+        {
+            if (property == null)
+            {
+                return null;
+            }
+
+            if (property.isArray && property.propertyType != SerializedPropertyType.String)
+            {
+                return property;
+            }
+
+            var directArray = property.FindPropertyRelative("Array");
+            if (directArray != null && directArray.isArray && directArray.propertyType != SerializedPropertyType.String)
+            {
+                return directArray;
+            }
+
+            var iterator = property.Copy();
+            var endProperty = property.GetEndProperty();
+            var enterChildren = true;
+
+            while (iterator.NextVisible(enterChildren) && !SerializedProperty.EqualContents(iterator, endProperty))
+            {
+                if (iterator.depth == property.depth + 1 && iterator.isArray && iterator.propertyType != SerializedPropertyType.String)
+                {
+                    return iterator.Copy();
+                }
+
+                enterChildren = false;
+            }
+
+            return null;
+        }
+
+        private static void AddSerializedPills(
+            SerializedProperty arrayProperty,
+            VisualElement pillsContainer,
+            Theme theme,
+            Action refresh,
+            Action<VisualElement, int> registerReorder)
+        {
+            if (arrayProperty.arraySize == 0)
+            {
+                pillsContainer.Add(CreateInfoLabel("No items", theme));
+                return;
+            }
+
+            for (var index = 0; index < arrayProperty.arraySize; index++)
+            {
+                var element = arrayProperty.GetArrayElementAtIndex(index);
+                var pill = CreateSerializedPill(arrayProperty, element, index, theme, refresh);
+                registerReorder?.Invoke(pill, index);
+                pillsContainer.Add(pill);
+            }
+        }
+
+        private static void AddRuntimePills(
+            IList runtimeList,
+            VisualElement pillsContainer,
+            SerializedObject serializedObject,
+            Theme theme,
+            Action refresh,
+            Action<VisualElement, int> registerReorder)
+        {
+            if (runtimeList.Count == 0)
+            {
+                pillsContainer.Add(CreateInfoLabel("No items", theme));
+                return;
+            }
+
+            for (var index = 0; index < runtimeList.Count; index++)
+            {
+                var reference = runtimeList[index] as UnityEngine.Object;
+                var pill = CreateRuntimePill(runtimeList, serializedObject, reference, index, theme, refresh);
+                registerReorder?.Invoke(pill, index);
+                pillsContainer.Add(pill);
+            }
+        }
+        private static VisualElement CreateSerializedPill(
+            SerializedProperty arrayProperty,
+            SerializedProperty element,
+            int index,
+            Theme theme,
+            Action refresh)
+        {
+            var reference = element.objectReferenceValue;
+            var arrayPath = arrayProperty.propertyPath;
+            var pill = CreatePillVisual(reference, theme, () =>
+            {
+                var currentArray = arrayProperty.serializedObject.FindProperty(arrayPath);
+                if (currentArray == null || index < 0 || index >= currentArray.arraySize)
+                {
+                    return;
+                }
+
+                currentArray.serializedObject.Update();
+                var currentElement = currentArray.GetArrayElementAtIndex(index);
+                var requiresSecondDelete = currentElement.propertyType == SerializedPropertyType.ObjectReference
+                    && currentElement.objectReferenceValue != null;
+                currentArray.DeleteArrayElementAtIndex(index);
+                if (requiresSecondDelete && index < currentArray.arraySize)
+                {
+                    currentArray.DeleteArrayElementAtIndex(index);
+                }
+
+                currentArray.serializedObject.ApplyModifiedProperties();
+                refresh();
+            });
+
+            RegisterPing(pill, reference);
+            return pill;
+        }
+
+        private static VisualElement CreateRuntimePill(
+            IList runtimeList,
+            SerializedObject serializedObject,
+            UnityEngine.Object reference,
+            int index,
+            Theme theme,
+            Action refresh)
+        {
+            var pill = CreatePillVisual(reference, theme, () =>
+            {
+                if (index < 0 || index >= runtimeList.Count)
+                {
+                    return;
+                }
+
+                Undo.RecordObject(serializedObject.targetObject, "Remove Pill List Item");
+                runtimeList.RemoveAt(index);
+                EditorUtility.SetDirty(serializedObject.targetObject);
+                serializedObject.Update();
+                refresh();
+            });
+
+            RegisterPing(pill, reference);
+            return pill;
+        }
+
+        private static VisualElement CreatePillVisual(UnityEngine.Object reference, Theme theme, Action onRemove)
+        {
+            var pillName = reference == null ? "Missing" : reference.name;
+            var accentColor = GetPillAccentColor(pillName);
+            var pillBackground = BlendColor(theme.PillBackground, accentColor, 0.20f);
+            var pillBorder = BlendColor(theme.PillBorder, accentColor, 0.42f);
+            var pillHoverBackground = BlendColor(theme.PillHoverBackground, accentColor, 0.28f);
+            var pillHoverBorder = BlendColor(theme.PillHoverBorder, accentColor, 0.56f);
+
+            var pill = new VisualElement();
+            pill.style.flexDirection = FlexDirection.Row;
+            pill.style.alignItems = Align.Center;
+            pill.style.backgroundColor = pillBackground;
+            pill.style.borderTopWidth = 1;
+            pill.style.borderRightWidth = 1;
+            pill.style.borderBottomWidth = 1;
+            pill.style.borderLeftWidth = 1;
+            pill.style.borderTopColor = pillBorder;
+            pill.style.borderRightColor = pillBorder;
+            pill.style.borderBottomColor = pillBorder;
+            pill.style.borderLeftColor = pillBorder;
+            pill.style.borderTopLeftRadius = 7;
+            pill.style.borderTopRightRadius = 7;
+            pill.style.borderBottomLeftRadius = 7;
+            pill.style.borderBottomRightRadius = 7;
+            pill.style.paddingLeft = 8;
+            pill.style.paddingRight = 4;
+            pill.style.paddingTop = 2;
+            pill.style.paddingBottom = 2;
+            pill.style.marginLeft = 4;
+            pill.style.marginBottom = 4;
+            pill.style.minHeight = 20;
+
+            var label = new Label(pillName);
+            label.style.color = theme.PillText;
+            label.style.fontSize = 11;
+            label.style.flexShrink = 0;
+            pill.Add(label);
+
+            var removeButton = CreateRemoveButton(theme, onRemove);
+            pill.Add(removeButton);
+
+            pill.RegisterCallback<MouseEnterEvent>(_ =>
+            {
+                pill.style.backgroundColor = pillHoverBackground;
+                pill.style.borderTopColor = pillHoverBorder;
+                pill.style.borderRightColor = pillHoverBorder;
+                pill.style.borderBottomColor = pillHoverBorder;
+                pill.style.borderLeftColor = pillHoverBorder;
+                removeButton.style.backgroundColor = theme.RemoveButtonHoverBackground;
+                removeButton.style.color = theme.RemoveButtonTextHover;
+                removeButton.style.opacity = 1f;
+            });
+            pill.RegisterCallback<MouseLeaveEvent>(_ =>
+            {
+                pill.style.backgroundColor = pillBackground;
+                pill.style.borderTopColor = pillBorder;
+                pill.style.borderRightColor = pillBorder;
+                pill.style.borderBottomColor = pillBorder;
+                pill.style.borderLeftColor = pillBorder;
+                removeButton.style.backgroundColor = theme.RemoveButtonBackground;
+                removeButton.style.color = theme.RemoveButtonText;
+                removeButton.style.opacity = 0f;
+            });
+
+            return pill;
+        }
+
+        private static Color GetPillAccentColor(string text)
+        {
+            unchecked
+            {
+                uint hash = 2166136261;
+                for (var index = 0; index < text.Length; index++)
+                {
+                    hash ^= text[index];
+                    hash *= 16777619;
+                }
+
+                var huePalette = new[]
+                {
+                    0.01f,
+                    0.06f,
+                    0.10f,
+                    0.15f,
+                    0.22f,
+                    0.30f,
+                    0.40f,
+                    0.78f,
+                    0.92f,
+                };
+                var paletteIndex = (int)(hash % (uint)huePalette.Length);
+                var paletteOffset = ((hash / (uint)huePalette.Length) % 100u) / 100f;
+                var hue = Mathf.Repeat(huePalette[paletteIndex] + Mathf.Lerp(-0.025f, 0.025f, paletteOffset), 1f);
+                var saturation = EditorGUIUtility.isProSkin ? 0.46f : 0.36f;
+                var value = EditorGUIUtility.isProSkin ? 0.78f : 0.68f;
+                return Color.HSVToRGB(hue, saturation, value);
+            }
+        }
+
+        private static Color BlendColor(Color baseColor, Color accentColor, float amount)
+        {
+            return new Color(
+                Mathf.Lerp(baseColor.r, accentColor.r, amount),
+                Mathf.Lerp(baseColor.g, accentColor.g, amount),
+                Mathf.Lerp(baseColor.b, accentColor.b, amount),
+                baseColor.a);
+        }
+
+        private static Button CreateInlineAddButton(Theme theme)
+        {
+            var addButton = new Button
+            {
+                text = "+"
+            };
+            addButton.style.minWidth = 22;
+            addButton.style.height = 20;
+            addButton.style.paddingLeft = 0;
+            addButton.style.paddingRight = 0;
+            addButton.style.paddingTop = 0;
+            addButton.style.paddingBottom = 0;
+            addButton.style.marginLeft = 4;
+            addButton.style.marginBottom = 4;
+            addButton.style.backgroundColor = theme.AddButtonBackground;
+            addButton.style.borderTopWidth = 1;
+            addButton.style.borderRightWidth = 1;
+            addButton.style.borderBottomWidth = 1;
+            addButton.style.borderLeftWidth = 1;
+            addButton.style.borderTopColor = theme.AddButtonBorder;
+            addButton.style.borderRightColor = theme.AddButtonBorder;
+            addButton.style.borderBottomColor = theme.AddButtonBorder;
+            addButton.style.borderLeftColor = theme.AddButtonBorder;
+            addButton.style.borderTopLeftRadius = 7;
+            addButton.style.borderTopRightRadius = 7;
+            addButton.style.borderBottomLeftRadius = 7;
+            addButton.style.borderBottomRightRadius = 7;
+            addButton.style.color = theme.AddButtonText;
+            addButton.style.unityFontStyleAndWeight = FontStyle.Bold;
+            addButton.style.fontSize = 12;
+            addButton.RegisterCallback<MouseEnterEvent>(_ =>
+            {
+                if (addButton.enabledSelf)
+                {
+                    addButton.style.backgroundColor = theme.AddButtonHoverBackground;
+                    addButton.style.borderTopColor = theme.AddButtonActiveBorder;
+                    addButton.style.borderRightColor = theme.AddButtonActiveBorder;
+                    addButton.style.borderBottomColor = theme.AddButtonActiveBorder;
+                    addButton.style.borderLeftColor = theme.AddButtonActiveBorder;
+                }
+            });
+            addButton.RegisterCallback<MouseLeaveEvent>(_ =>
+            {
+                if (addButton.enabledSelf)
+                {
+                    addButton.style.backgroundColor = theme.AddButtonBackground;
+                    addButton.style.borderTopColor = theme.AddButtonBorder;
+                    addButton.style.borderRightColor = theme.AddButtonBorder;
+                    addButton.style.borderBottomColor = theme.AddButtonBorder;
+                    addButton.style.borderLeftColor = theme.AddButtonBorder;
+                }
+            });
+            return addButton;
+        }
+
+        private static Button CreateRemoveButton(Theme theme, Action onClick)
+        {
+            var removeButton = new Button(onClick)
+            {
+                text = "x"
+            };
+            removeButton.style.marginLeft = 5;
+            removeButton.style.minWidth = 16;
+            removeButton.style.width = 16;
+            removeButton.style.height = 16;
+            removeButton.style.paddingLeft = 0;
+            removeButton.style.paddingRight = 0;
+            removeButton.style.paddingTop = 0;
+            removeButton.style.paddingBottom = 0;
+            removeButton.style.backgroundColor = theme.RemoveButtonBackground;
+            removeButton.style.color = theme.RemoveButtonText;
+            removeButton.style.borderTopWidth = 0;
+            removeButton.style.borderRightWidth = 0;
+            removeButton.style.borderBottomWidth = 0;
+            removeButton.style.borderLeftWidth = 0;
+            removeButton.style.borderTopLeftRadius = 4;
+            removeButton.style.borderTopRightRadius = 4;
+            removeButton.style.borderBottomLeftRadius = 4;
+            removeButton.style.borderBottomRightRadius = 4;
+            removeButton.style.fontSize = 10;
+            removeButton.style.opacity = 0f;
+            return removeButton;
+        }
+
+        private static Label CreateInfoLabel(string text, Theme theme)
+        {
+            var infoLabel = new Label(text);
+            infoLabel.style.color = theme.SecondaryText;
+            infoLabel.style.fontSize = 11;
+            infoLabel.style.paddingLeft = 4;
+            infoLabel.style.paddingBottom = 4;
+            infoLabel.style.marginLeft = 4;
+            return infoLabel;
+        }
+
+        private static void RegisterPing(VisualElement pill, UnityEngine.Object reference)
+        {
+            pill.RegisterCallback<ClickEvent>(evt =>
+            {
+                if (evt.target is Button || reference == null)
+                {
+                    return;
+                }
+
+                EditorGUIUtility.PingObject(reference);
+                Selection.activeObject = reference;
+            });
+        }
+
+        private static List<AssetChoice> FindAssetsForType(Type objectType)
+        {
+            var choices = new List<AssetChoice>();
+            var guids = AssetDatabase.FindAssets($"t:{objectType.Name}");
+
+            for (var index = 0; index < guids.Length; index++)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guids[index]);
+                var asset = AssetDatabase.LoadAssetAtPath(path, objectType) as UnityEngine.Object;
+                if (asset == null || !objectType.IsInstanceOfType(asset))
+                {
+                    continue;
+                }
+
+                choices.Add(new AssetChoice(asset.name, GetPathLabel(path), asset));
+            }
+
+            choices.Sort((left, right) =>
+            {
+                var titleCompare = string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
+                if (titleCompare != 0)
+                {
+                    return titleCompare;
+                }
+
+                return string.Compare(left.PathLabel, right.PathLabel, StringComparison.OrdinalIgnoreCase);
+            });
+
+            return choices;
+        }
+
+        private static string GetPathLabel(string assetPath)
+        {
+            var directory = Path.GetDirectoryName(assetPath);
+            if (string.IsNullOrEmpty(directory))
+            {
+                return "Assets";
+            }
+
+            return directory.Replace('\\', '/');
+        }
+
+        private static string FormatCount(int count)
+        {
+            return count == 1 ? "1 item" : $"{count} items";
+        }
+
+        private readonly struct AssetChoice
+        {
+            public AssetChoice(string name, string pathLabel, UnityEngine.Object asset)
+            {
+                Name = name;
+                PathLabel = pathLabel;
+                Asset = asset;
+            }
+
+            public string Name { get; }
+            public string PathLabel { get; }
+            public UnityEngine.Object Asset { get; }
+        }
+
+        private readonly struct Theme
+        {
+            public static Theme Create()
+            {
+                if (EditorGUIUtility.isProSkin)
+                {
+                    return new Theme(
+                        new Color(0.18f, 0.18f, 0.18f, 1f),
+                        new Color(0.24f, 0.24f, 0.24f, 1f),
+                        new Color(0.88f, 0.88f, 0.88f, 1f),
+                        new Color(0.60f, 0.60f, 0.60f, 1f),
+                        new Color(0.25f, 0.31f, 0.39f, 1f),
+                        new Color(0.30f, 0.37f, 0.46f, 1f),
+                        new Color(0.39f, 0.47f, 0.57f, 1f),
+                        new Color(0.50f, 0.60f, 0.70f, 1f),
+                        new Color(0.93f, 0.95f, 0.98f, 1f),
+                        new Color(0.22f, 0.24f, 0.27f, 1f),
+                        new Color(0.29f, 0.32f, 0.37f, 1f),
+                        new Color(0.38f, 0.43f, 0.50f, 1f),
+                        new Color(0.46f, 0.53f, 0.62f, 1f),
+                        new Color(0.79f, 0.83f, 0.88f, 1f),
+                        new Color(0.32f, 0.36f, 0.42f, 1f),
+                        new Color(0.43f, 0.49f, 0.57f, 1f),
+                        new Color(0.72f, 0.76f, 0.82f, 1f),
+                        new Color(0.94f, 0.97f, 1.00f, 1f),
+                        new Color(0.20f, 0.22f, 0.25f, 1f),
+                        new Color(0.31f, 0.35f, 0.40f, 1f),
+                        new Color(0.92f, 0.95f, 0.99f, 1f),
+                        new Color(0.22f, 0.25f, 0.30f, 1f),
+                        new Color(0.28f, 0.33f, 0.40f, 1f),
+                        new Color(0.73f, 0.80f, 0.90f, 1f),
+                        new Color(0.92f, 0.95f, 0.99f, 1f),
+                        new Color(0.66f, 0.71f, 0.78f, 1f));
+                }
+
+                return new Theme(
+                    new Color(0.94f, 0.94f, 0.94f, 1f),
+                    new Color(0.77f, 0.77f, 0.77f, 1f),
+                    new Color(0.15f, 0.15f, 0.15f, 1f),
+                    new Color(0.45f, 0.45f, 0.45f, 1f),
+                    new Color(0.89f, 0.92f, 0.96f, 1f),
+                    new Color(0.84f, 0.89f, 0.95f, 1f),
+                    new Color(0.67f, 0.76f, 0.88f, 1f),
+                    new Color(0.56f, 0.67f, 0.81f, 1f),
+                    new Color(0.18f, 0.24f, 0.31f, 1f),
+                    new Color(0.96f, 0.96f, 0.96f, 1f),
+                    new Color(0.90f, 0.90f, 0.90f, 1f),
+                    new Color(0.76f, 0.76f, 0.76f, 1f),
+                    new Color(0.61f, 0.70f, 0.81f, 1f),
+                    new Color(0.38f, 0.43f, 0.50f, 1f),
+                    new Color(0.86f, 0.90f, 0.95f, 1f),
+                    new Color(0.72f, 0.79f, 0.88f, 1f),
+                    new Color(0.43f, 0.43f, 0.43f, 1f),
+                    new Color(0.22f, 0.27f, 0.34f, 1f),
+                    new Color(0.98f, 0.98f, 0.98f, 1f),
+                    new Color(0.82f, 0.82f, 0.82f, 1f),
+                    new Color(0.18f, 0.18f, 0.18f, 1f),
+                    new Color(0.93f, 0.95f, 0.98f, 1f),
+                    new Color(0.86f, 0.90f, 0.95f, 1f),
+                    new Color(0.45f, 0.56f, 0.72f, 1f),
+                    new Color(0.16f, 0.20f, 0.26f, 1f),
+                    new Color(0.43f, 0.47f, 0.53f, 1f));
+            }
+
+            private Theme(
+                Color surfaceBackground,
+                Color surfaceBorder,
+                Color titleText,
+                Color secondaryText,
+                Color pillBackground,
+                Color pillHoverBackground,
+                Color pillBorder,
+                Color pillHoverBorder,
+                Color pillText,
+                Color addButtonBackground,
+                Color addButtonHoverBackground,
+                Color addButtonBorder,
+                Color addButtonActiveBorder,
+                Color addButtonText,
+                Color removeButtonBackground,
+                Color removeButtonHoverBackground,
+                Color removeButtonText,
+                Color removeButtonTextHover,
+                Color popupBackground,
+                Color popupBorder,
+                Color popupHeaderText,
+                Color popupRowBackground,
+                Color popupRowHoverBackground,
+                Color popupRowAccent,
+                Color popupRowText,
+                Color popupRowSubtext)
+            {
+                SurfaceBackground = surfaceBackground;
+                SurfaceBorder = surfaceBorder;
+                TitleText = titleText;
+                SecondaryText = secondaryText;
+                PillBackground = pillBackground;
+                PillHoverBackground = pillHoverBackground;
+                PillBorder = pillBorder;
+                PillHoverBorder = pillHoverBorder;
+                PillText = pillText;
+                AddButtonBackground = addButtonBackground;
+                AddButtonHoverBackground = addButtonHoverBackground;
+                AddButtonBorder = addButtonBorder;
+                AddButtonActiveBorder = addButtonActiveBorder;
+                AddButtonText = addButtonText;
+                RemoveButtonBackground = removeButtonBackground;
+                RemoveButtonHoverBackground = removeButtonHoverBackground;
+                RemoveButtonText = removeButtonText;
+                RemoveButtonTextHover = removeButtonTextHover;
+                PopupBackground = popupBackground;
+                PopupBorder = popupBorder;
+                PopupHeaderText = popupHeaderText;
+                PopupRowBackground = popupRowBackground;
+                PopupRowHoverBackground = popupRowHoverBackground;
+                PopupRowAccent = popupRowAccent;
+                PopupRowText = popupRowText;
+                PopupRowSubtext = popupRowSubtext;
+            }
+
+            public Color SurfaceBackground { get; }
+            public Color SurfaceBorder { get; }
+            public Color TitleText { get; }
+            public Color SecondaryText { get; }
+            public Color PillBackground { get; }
+            public Color PillHoverBackground { get; }
+            public Color PillBorder { get; }
+            public Color PillHoverBorder { get; }
+            public Color PillText { get; }
+            public Color AddButtonBackground { get; }
+            public Color AddButtonHoverBackground { get; }
+            public Color AddButtonBorder { get; }
+            public Color AddButtonActiveBorder { get; }
+            public Color AddButtonText { get; }
+            public Color RemoveButtonBackground { get; }
+            public Color RemoveButtonHoverBackground { get; }
+            public Color RemoveButtonText { get; }
+            public Color RemoveButtonTextHover { get; }
+            public Color PopupBackground { get; }
+            public Color PopupBorder { get; }
+            public Color PopupHeaderText { get; }
+            public Color PopupRowBackground { get; }
+            public Color PopupRowHoverBackground { get; }
+            public Color PopupRowAccent { get; }
+            public Color PopupRowText { get; }
+            public Color PopupRowSubtext { get; }
+        }
+    }
+}
