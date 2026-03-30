@@ -197,11 +197,11 @@ namespace PillsList.Editor
 
             void CloseAddPopup()
             {
-                addButton.style.backgroundColor = theme.AddButtonBackground;
-                addButton.style.borderTopColor = theme.AddButtonBorder;
-                addButton.style.borderRightColor = theme.AddButtonBorder;
-                addButton.style.borderBottomColor = theme.AddButtonBorder;
-                addButton.style.borderLeftColor = theme.AddButtonBorder;
+                addButton.style.backgroundColor = theme.PillBackground;
+                addButton.style.borderTopColor = theme.PillBorder;
+                addButton.style.borderRightColor = theme.PillBorder;
+                addButton.style.borderBottomColor = theme.PillBorder;
+                addButton.style.borderLeftColor = theme.PillBorder;
             }
 
             bool TryAddChoice(UnityEngine.Object asset)
@@ -782,12 +782,6 @@ namespace PillsList.Editor
             actionSlot.Add(chipIndicator);
 
             var removeButton = CreateRemoveButton(theme, onRemove);
-            removeButton.style.position = Position.Absolute;
-            removeButton.style.left = 0;
-            removeButton.style.top = 0;
-            removeButton.style.bottom = 0;
-            removeButton.style.display = DisplayStyle.None;
-            removeButton.style.height = new StyleLength(Length.Percent(100));
             actionSlot.Add(removeButton);
             pill.Add(actionSlot);
 
@@ -884,50 +878,52 @@ namespace PillsList.Editor
             {
                 text = "+"
             };
-            addButton.style.minWidth = 22;
-            addButton.style.height = 20;
+            addButton.style.minWidth = 18;
+            addButton.style.width = 22;
+            addButton.style.height = 18;
             addButton.style.paddingLeft = 0;
             addButton.style.paddingRight = 0;
             addButton.style.paddingTop = 0;
             addButton.style.paddingBottom = 0;
             addButton.style.marginLeft = 4;
-            addButton.style.marginBottom = 4;
-            addButton.style.backgroundColor = theme.AddButtonBackground;
+            addButton.style.marginBottom = 0;
+            addButton.style.marginTop = 0;
+            addButton.style.backgroundColor = theme.PillBackground;
             addButton.style.borderTopWidth = 1;
             addButton.style.borderRightWidth = 1;
             addButton.style.borderBottomWidth = 1;
             addButton.style.borderLeftWidth = 1;
-            addButton.style.borderTopColor = theme.AddButtonBorder;
-            addButton.style.borderRightColor = theme.AddButtonBorder;
-            addButton.style.borderBottomColor = theme.AddButtonBorder;
-            addButton.style.borderLeftColor = theme.AddButtonBorder;
+            addButton.style.borderTopColor = theme.PillBorder;
+            addButton.style.borderRightColor = theme.PillBorder;
+            addButton.style.borderBottomColor = theme.PillBorder;
+            addButton.style.borderLeftColor = theme.PillBorder;
             addButton.style.borderTopLeftRadius = 7;
             addButton.style.borderTopRightRadius = 7;
             addButton.style.borderBottomLeftRadius = 7;
             addButton.style.borderBottomRightRadius = 7;
-            addButton.style.color = theme.AddButtonText;
+            addButton.style.color = theme.PillText;
             addButton.style.unityFontStyleAndWeight = FontStyle.Bold;
             addButton.style.fontSize = 12;
             addButton.RegisterCallback<MouseEnterEvent>(_ =>
             {
                 if (addButton.enabledSelf)
                 {
-                    addButton.style.backgroundColor = theme.AddButtonHoverBackground;
-                    addButton.style.borderTopColor = theme.AddButtonActiveBorder;
-                    addButton.style.borderRightColor = theme.AddButtonActiveBorder;
-                    addButton.style.borderBottomColor = theme.AddButtonActiveBorder;
-                    addButton.style.borderLeftColor = theme.AddButtonActiveBorder;
+                    addButton.style.backgroundColor = theme.PillHoverBackground;
+                    addButton.style.borderTopColor = theme.PillHoverBorder;
+                    addButton.style.borderRightColor = theme.PillHoverBorder;
+                    addButton.style.borderBottomColor = theme.PillHoverBorder;
+                    addButton.style.borderLeftColor = theme.PillHoverBorder;
                 }
             });
             addButton.RegisterCallback<MouseLeaveEvent>(_ =>
             {
                 if (addButton.enabledSelf)
                 {
-                    addButton.style.backgroundColor = theme.AddButtonBackground;
-                    addButton.style.borderTopColor = theme.AddButtonBorder;
-                    addButton.style.borderRightColor = theme.AddButtonBorder;
-                    addButton.style.borderBottomColor = theme.AddButtonBorder;
-                    addButton.style.borderLeftColor = theme.AddButtonBorder;
+                    addButton.style.backgroundColor = theme.PillBackground;
+                    addButton.style.borderTopColor = theme.PillBorder;
+                    addButton.style.borderRightColor = theme.PillBorder;
+                    addButton.style.borderBottomColor = theme.PillBorder;
+                    addButton.style.borderLeftColor = theme.PillBorder;
                 }
             });
             return addButton;
@@ -966,12 +962,17 @@ namespace PillsList.Editor
             removeButton.style.alignItems = Align.Center;
             removeButton.style.justifyContent = Justify.Center;
             removeButton.style.minWidth = 14;
-            removeButton.style.width = 14;
-            removeButton.style.height = 14;
+            removeButton.style.height = new StyleLength(Length.Pixels(14));
+            removeButton.style.width = new StyleLength(Length.Pixels(14));
             removeButton.style.paddingLeft = 0;
             removeButton.style.paddingRight = 0;
             removeButton.style.paddingTop = 0;
-            removeButton.style.paddingBottom = 0;
+            removeButton.style.paddingBottom = 1;
+            removeButton.style.marginLeft = 0;
+            removeButton.style.marginRight = 0;
+            removeButton.style.marginTop = 0;
+            removeButton.style.marginBottom = 0;
+            
             removeButton.style.backgroundColor = theme.RemoveButtonHoverBackground;
             removeButton.style.color = theme.RemoveButtonTextHover;
             removeButton.style.borderTopWidth = 0;
@@ -982,9 +983,17 @@ namespace PillsList.Editor
             removeButton.style.borderTopRightRadius = 4;
             removeButton.style.borderBottomLeftRadius = 4;
             removeButton.style.borderBottomRightRadius = 4;
-            removeButton.style.fontSize = 9;
+            removeButton.style.fontSize = 8;
             removeButton.style.unityFontStyleAndWeight = FontStyle.Bold;
             removeButton.style.unityTextAlign = TextAnchor.MiddleCenter;
+            
+            
+            removeButton.style.position = Position.Absolute;
+            removeButton.style.alignSelf = Align.Center;
+            removeButton.style.left = 0;
+            removeButton.style.top = 0;
+            removeButton.style.bottom = 0;
+            removeButton.style.display = DisplayStyle.None;
             return removeButton;
         }
 
@@ -992,9 +1001,10 @@ namespace PillsList.Editor
         {
             var infoLabel = new Label(text);
             infoLabel.style.color = theme.SecondaryText;
+            infoLabel.style.alignSelf = Align.Center;
             infoLabel.style.fontSize = 11;
             infoLabel.style.paddingLeft = 4;
-            infoLabel.style.paddingBottom = 4;
+            infoLabel.style.paddingBottom = 1;
             infoLabel.style.marginLeft = 4;
             return infoLabel;
         }
@@ -1085,11 +1095,6 @@ namespace PillsList.Editor
                         new Color(0.09f, 0.09f, 0.09f, 1f),
                         new Color(0.88f, 0.88f, 0.88f, 1f),
                         new Color(0.60f, 0.60f, 0.60f, 1f),
-                        new Color(0.25f, 0.31f, 0.39f, 1f),
-                        new Color(0.30f, 0.37f, 0.46f, 1f),
-                        new Color(0.39f, 0.47f, 0.57f, 1f),
-                        new Color(0.50f, 0.60f, 0.70f, 1f),
-                        new Color(0.93f, 0.95f, 0.98f, 1f),
                         new Color(0.22f, 0.24f, 0.27f, 1f),
                         new Color(0.29f, 0.32f, 0.37f, 1f),
                         new Color(0.38f, 0.43f, 0.50f, 1f),
@@ -1114,18 +1119,15 @@ namespace PillsList.Editor
                     new Color(0.69f, 0.69f, 0.69f, 1f),
                     new Color(0.15f, 0.15f, 0.15f, 1f),
                     new Color(0.45f, 0.45f, 0.45f, 1f),
-                    new Color(0.89f, 0.92f, 0.96f, 1f),
-                    new Color(0.84f, 0.89f, 0.95f, 1f),
-                    new Color(0.67f, 0.76f, 0.88f, 1f),
-                    new Color(0.56f, 0.67f, 0.81f, 1f),
-                    new Color(0.18f, 0.24f, 0.31f, 1f),
                     new Color(0.96f, 0.96f, 0.96f, 1f),
                     new Color(0.90f, 0.90f, 0.90f, 1f),
                     new Color(0.76f, 0.76f, 0.76f, 1f),
                     new Color(0.61f, 0.70f, 0.81f, 1f),
                     new Color(0.38f, 0.43f, 0.50f, 1f),
-                    new Color(0.86f, 0.90f, 0.95f, 1f),
-                    new Color(0.72f, 0.79f, 0.88f, 1f),
+                    new Color(0.84f, 0.89f, 0.95f, 1f),
+                    //new Color(0.86f, 0.90f, 0.95f, 1f),
+                    //new Color(0.72f, 0.79f, 0.88f, 1f),
+                    new Color(0.84f, 0.89f, 0.95f, 1f),
                     new Color(0.43f, 0.43f, 0.43f, 1f),
                     new Color(0.22f, 0.27f, 0.34f, 1f),
                     new Color(0.98f, 0.98f, 0.98f, 1f),
@@ -1148,11 +1150,6 @@ namespace PillsList.Editor
                 Color pillBorder,
                 Color pillHoverBorder,
                 Color pillText,
-                Color addButtonBackground,
-                Color addButtonHoverBackground,
-                Color addButtonBorder,
-                Color addButtonActiveBorder,
-                Color addButtonText,
                 Color removeButtonBackground,
                 Color removeButtonHoverBackground,
                 Color removeButtonText,
@@ -1175,13 +1172,8 @@ namespace PillsList.Editor
                 PillBorder = pillBorder;
                 PillHoverBorder = pillHoverBorder;
                 PillText = pillText;
-                AddButtonBackground = addButtonBackground;
-                AddButtonHoverBackground = addButtonHoverBackground;
-                AddButtonBorder = addButtonBorder;
-                AddButtonActiveBorder = addButtonActiveBorder;
-                AddButtonText = addButtonText;
                 RemoveButtonBackground = removeButtonBackground;
-                RemoveButtonHoverBackground = removeButtonHoverBackground;
+                //RemoveButtonHoverBackground = removeButtonHoverBackground;
                 RemoveButtonText = removeButtonText;
                 RemoveButtonTextHover = removeButtonTextHover;
                 PopupBackground = popupBackground;
@@ -1203,13 +1195,8 @@ namespace PillsList.Editor
             public Color PillBorder { get; }
             public Color PillHoverBorder { get; }
             public Color PillText { get; }
-            public Color AddButtonBackground { get; }
-            public Color AddButtonHoverBackground { get; }
-            public Color AddButtonBorder { get; }
-            public Color AddButtonActiveBorder { get; }
-            public Color AddButtonText { get; }
             public Color RemoveButtonBackground { get; }
-            public Color RemoveButtonHoverBackground { get; }
+            public Color RemoveButtonHoverBackground => Color.clear;
             public Color RemoveButtonText { get; }
             public Color RemoveButtonTextHover { get; }
             public Color PopupBackground { get; }
