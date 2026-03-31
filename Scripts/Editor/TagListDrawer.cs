@@ -9,7 +9,7 @@ using UnityEngine.UIElements;
 
 namespace PillsList.Editor
 {
-    [CustomPropertyDrawer(typeof(TagsList<>), true)]
+    [CustomPropertyDrawer(typeof(TagList<>), true)]
     public sealed class TagListDrawer : PropertyDrawer
     {
         public override VisualElement CreatePropertyGUI(SerializedProperty property)
@@ -385,7 +385,7 @@ namespace PillsList.Editor
 
             while (type != null)
             {
-                if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(TagsList<>))
+                if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(TagList<>))
                 {
                     return type.GetGenericArguments()[0];
                 }
