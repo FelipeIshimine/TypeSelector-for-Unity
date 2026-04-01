@@ -117,7 +117,7 @@ public sealed class SubAssetSelectorDrawer : PropertyDrawer
             var propertyPath     = property.propertyPath;
             var fieldType        = fieldInfo.FieldType;
             var listMode         = ((SubAssetSelectorAttribute)attribute).Mode;
-
+            var attr = (SubAssetSelectorAttribute)attribute;
             SubAssetSelectorDropdown.Open(
                 button.worldBound,
                 containerPath,
@@ -130,7 +130,8 @@ public sealed class SubAssetSelectorDrawer : PropertyDrawer
                     if (targetProperty == null) return;
                     targetProperty.objectReferenceValue = selectedAsset;
                     serializedObject.ApplyModifiedProperties();
-                }
+                },
+                attr.DefaultType
             );
         };
 

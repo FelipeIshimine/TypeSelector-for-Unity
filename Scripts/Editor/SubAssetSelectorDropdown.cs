@@ -32,7 +32,8 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         string containerAssetPath,
         Type fieldType,
         SubAssetSelectorAttribute.ListMode listMode,
-        Action<ScriptableObject> onSelected)
+        Action<ScriptableObject> onSelected,
+        Type defaultType = null)
     {
         // worldBound is in EditorWindow-local space; convert to screen space.
         var screenRect = worldBound;
@@ -49,6 +50,14 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         window._listMode           = listMode;
         window._onSelected         = onSelected;
         window.LoadSubAssets();
+        
+        // Ensure default exists BEFORE showing
+        if (!IsScenePath(containerAssetPath))
+        {
+	        SubAssetDefaults.GetOrCreateDefault(containerAssetPath, fieldType, defaultType);
+	        window.LoadSubAssets(); // reload after potential creation
+        }
+        
         window.ShowAsDropDown(screenRect, new Vector2(Mathf.Max(screenRect.width, 260), 300));
     }
 
@@ -390,7 +399,15 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         if (item is ScriptableObject asset)
         {
             row.style.backgroundColor = isSelected ? AccentColor : NaturalRowColor(index);
-            nameLabel.text            = asset.name;
+            bool isDefault = asset.name == SubAssetDefaults.DefaultName;
+
+            nameLabel.text = isDefault ? $"{asset.name}" : asset.name;
+
+            if (isDefault)
+            {
+	            nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            }
+            
             nameLabel.style.color     = isSelected ? Color.white : TextColor;
 
             var assetIcon          = EditorGUIUtility.ObjectContent(asset, asset.GetType()).image as Texture2D;
@@ -755,6 +772,15 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
     private void TryDeleteSelected(ScriptableObject target)
     {
+	    if (target.name == SubAssetDefaults.DefaultName)
+	    {
+		    EditorUtility.DisplayDialog(
+			    "Cannot Delete",
+			    "The Default sub-asset cannot be deleted.",
+			    "OK");
+		    return;
+	    }
+	    
         int refCount = CountReferences(target, out List<string> paths);
         if (refCount > 0)
         {
