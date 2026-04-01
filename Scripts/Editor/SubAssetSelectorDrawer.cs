@@ -24,10 +24,10 @@ public sealed class SubAssetSelectorDrawer : PropertyDrawer
         container.style.minHeight     = 20f;
 
         var fieldLabel = new Label(property.displayName);
-        fieldLabel.style.width         = 120f;
-        fieldLabel.style.minWidth      = 30f;
-        fieldLabel.style.flexShrink    = 0f;
-        fieldLabel.style.overflow      = Overflow.Hidden;
+        fieldLabel.style.width          = 120f;
+        fieldLabel.style.minWidth       = 30f;
+        fieldLabel.style.flexShrink     = 0f;
+        fieldLabel.style.overflow       = Overflow.Hidden;
         fieldLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
 
         var selectorButton = BuildSelectorButton(property);
@@ -81,20 +81,22 @@ public sealed class SubAssetSelectorDrawer : PropertyDrawer
 
             if (containerPath.EndsWith(".unity", StringComparison.OrdinalIgnoreCase))
             {
-	            Debug.LogWarning("[SubAssetSelector] Scene objects are not supported. " +
-		            "Move the ScriptableObject field to a ScriptableObject asset instead.");
-	            return;
+                Debug.LogWarning("[SubAssetSelector] Scene objects are not supported. " +
+                    "Move the ScriptableObject field to a ScriptableObject asset instead.");
+                return;
             }
-            
-            // Capture path and type now — SerializedProperty may be invalid in the async callback.
+
+            // Capture path, type, and mode now — SerializedProperty may be invalid in the async callback.
             var serializedObject = property.serializedObject;
             var propertyPath     = property.propertyPath;
             var fieldType        = fieldInfo.FieldType;
+            var listMode         = ((SubAssetSelectorAttribute)attribute).Mode;
 
             SubAssetSelectorDropdown.Open(
                 button.worldBound,
                 containerPath,
                 fieldType,
+                listMode,
                 selectedAsset =>
                 {
                     serializedObject.Update();
@@ -148,4 +150,3 @@ public sealed class SubAssetSelectorDrawer : PropertyDrawer
         return null;
     }
 }
-

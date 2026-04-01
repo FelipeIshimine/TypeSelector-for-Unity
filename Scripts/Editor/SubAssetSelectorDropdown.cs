@@ -5,12 +5,16 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
-using UnityEditor.SceneManagement;
 using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
 
 /// <summary>
 /// Searchable dropdown that lists sub-assets of a given type inside a container asset.
+///
+/// Supports two display modes:
+///   Flat          — all items in a single list; shows a subtle type label on the right of each row.
+///   GroupedByType — items grouped under their concrete type name; type labels are omitted.
+///                   While the user is searching, groups collapse into a flat list.
 ///
 /// Page flow:
 ///   SelectAsset → type a name → ＋ Create →
@@ -27,6 +31,7 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         Rect worldBound,
         string containerAssetPath,
         Type fieldType,
+        SubAssetSelectorAttribute.ListMode listMode,
         Action<ScriptableObject> onSelected)
     {
         // worldBound is in EditorWindow-local space; convert to screen space.
@@ -41,6 +46,7 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         window.hideFlags           = HideFlags.DontSave;
         window._containerAssetPath = containerAssetPath;
         window._fieldType          = fieldType;
+        window._listMode           = listMode;
         window._onSelected         = onSelected;
         window.LoadSubAssets();
         window.ShowAsDropDown(screenRect, new Vector2(Mathf.Max(screenRect.width, 260), 300));
@@ -50,20 +56,29 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
     private enum Page { SelectAsset, SelectType }
 
+    // ── Group header item ─────────────────────────────────────────────────────
+
+    private readonly struct GroupHeader
+    {
+        public readonly string Title;
+        public GroupHeader(string title) => Title = title;
+    }
+
     // ── State ─────────────────────────────────────────────────────────────────
 
-    private string                   _containerAssetPath;
-    private Type                     _fieldType;
-    private Action<ScriptableObject> _onSelected;
-    private List<ScriptableObject>   _allSubAssets     = new();
-    private List<Type>               _concreteTypes    = new();
+    private string                             _containerAssetPath;
+    private Type                               _fieldType;
+    private SubAssetSelectorAttribute.ListMode _listMode;
+    private Action<ScriptableObject>           _onSelected;
+    private List<ScriptableObject>             _allSubAssets  = new();
+    private List<Type>                         _concreteTypes = new();
 
     private Page   _currentPage          = Page.SelectAsset;
     private string _searchText           = "";
     private string _pendingCreationName  = "";
-    private string _savedAssetSearchText = ""; // restored when navigating back
+    private string _savedAssetSearchText = "";
 
-    // _displayItems holds: CreateSentinel, ScriptableObject (existing), or Type (concrete type).
+    // _displayItems holds: CreateSentinel, GroupHeader, ScriptableObject (existing), or Type (concrete type).
     private readonly List<object> _displayItems = new();
 
     // Sentinel that represents the "＋ Create" row — identity-compared, never null.
@@ -79,36 +94,37 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
     // ── Visual theme (matches AdvancedDropdownBuilder's DropdownWindow) ───────
 
-    static readonly Color BackgroundColor = new(0.18f, 0.18f, 0.18f);
-    static readonly Color HeaderColor     = new(0.13f, 0.13f, 0.13f);
-    static readonly Color BorderColor     = new(0.09f, 0.09f, 0.09f);
-    static readonly Color RowAltColor     = new(0.00f, 0.00f, 0.00f, 0.06f);
-    static readonly Color HoverColor      = new(0.28f, 0.28f, 0.28f);
-    static readonly Color TextColor       = new(0.85f, 0.85f, 0.85f);
-    static readonly Color SubtextColor    = new(0.50f, 0.50f, 0.50f);
-    static Color AccentColor     => HoverColor;
+    static readonly Color BackgroundColor  = new(0.18f, 0.18f, 0.18f);
+    static readonly Color HeaderColor      = new(0.13f, 0.13f, 0.13f);
+    static readonly Color BorderColor      = new(0.09f, 0.09f, 0.09f);
+    static readonly Color RowAltColor      = new(0.00f, 0.00f, 0.00f, 0.06f);
+    static readonly Color HoverColor       = new(0.28f, 0.28f, 0.28f);
+    static readonly Color TextColor        = new(0.85f, 0.85f, 0.85f);
+    static readonly Color SubtextColor     = new(0.50f, 0.50f, 0.50f);
+    static readonly Color TypeLabelColor   = new(0.40f, 0.40f, 0.40f);
+    static Color AccentColor => HoverColor;
 
     // ── Data loading ──────────────────────────────────────────────────────────
 
     private void LoadSubAssets()
     {
-	    if (IsScenePath(_containerAssetPath))
-	    {
-		    _allSubAssets = new List<ScriptableObject>();
-		    return;
-	    }
+        if (IsScenePath(_containerAssetPath))
+        {
+            _allSubAssets = new List<ScriptableObject>();
+            return;
+        }
 
-	    _allSubAssets = AssetDatabase.LoadAllAssetsAtPath(_containerAssetPath)
-	                                 .Where(asset => asset != null
-		                                 && !AssetDatabase.IsMainAsset(asset)
-		                                 && _fieldType.IsAssignableFrom(asset.GetType()))
-	                                 .Cast<ScriptableObject>()
-	                                 .OrderBy(asset => asset.name)
-	                                 .ToList();
+        _allSubAssets = AssetDatabase.LoadAllAssetsAtPath(_containerAssetPath)
+                                     .Where(asset => asset != null
+                                         && !AssetDatabase.IsMainAsset(asset)
+                                         && _fieldType.IsAssignableFrom(asset.GetType()))
+                                     .Cast<ScriptableObject>()
+                                     .OrderBy(asset => asset.name)
+                                     .ToList();
     }
 
     private static bool IsScenePath(string path) =>
-	    path.EndsWith(".unity", StringComparison.OrdinalIgnoreCase);
+        path.EndsWith(".unity", StringComparison.OrdinalIgnoreCase);
 
     private void EnsureConcreteTypesLoaded()
     {
@@ -249,6 +265,13 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         // Rows must not steal keyboard focus — all input stays in the search field.
         row.focusable = false;
 
+        // ── Normal item content (assets / type picker rows) ───────────────────
+
+        var itemContent = new VisualElement { name = "item-content" };
+        itemContent.style.flexDirection = FlexDirection.Row;
+        itemContent.style.alignItems    = Align.Center;
+        itemContent.style.flexGrow      = 1;
+
         var icon = new Image { name = "icon" };
         icon.style.width       = 16f;
         icon.style.height      = 16f;
@@ -263,119 +286,235 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         nameLabel.style.overflow       = Overflow.Hidden;
         nameLabel.style.textOverflow   = TextOverflow.Ellipsis;
 
-        row.RegisterCallback<PointerEnterEvent>(_ => row.style.backgroundColor = HoverColor);
+        // Subtle type annotation, shown in Flat mode only.
+        var typeLabel = new Label { name = "type" };
+        typeLabel.style.fontSize       = 10f;
+        typeLabel.style.color          = TypeLabelColor;
+        typeLabel.style.unityTextAlign = TextAnchor.MiddleRight;
+        typeLabel.style.marginLeft     = 6f;
+        typeLabel.style.maxWidth       = 90f;
+        typeLabel.style.overflow       = Overflow.Hidden;
+        typeLabel.style.textOverflow   = TextOverflow.Ellipsis;
+        typeLabel.style.flexShrink     = 0f;
+        typeLabel.style.display        = DisplayStyle.None;
+
+        itemContent.Add(icon);
+        itemContent.Add(nameLabel);
+        itemContent.Add(typeLabel);
+
+        // ── Group header content (GroupedByType mode) ─────────────────────────
+
+        var headerContent = new VisualElement { name = "header-content" };
+        headerContent.style.flexGrow      = 1;
+        headerContent.style.flexDirection = FlexDirection.Row;
+        headerContent.style.alignItems    = Align.Center;
+        headerContent.style.display       = DisplayStyle.None;
+
+        var groupLabel = new Label { name = "group-label" };
+        groupLabel.style.fontSize                = 10f;
+        groupLabel.style.color                   = SubtextColor;
+        groupLabel.style.unityTextAlign          = TextAnchor.MiddleLeft;
+        groupLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+        groupLabel.style.flexGrow                = 1;
+
+        headerContent.Add(groupLabel);
+
+        row.Add(itemContent);
+        row.Add(headerContent);
+
+        // ── Interaction callbacks ─────────────────────────────────────────────
+
+        row.RegisterCallback<PointerEnterEvent>(_ =>
+        {
+            if (row.userData is int rowIndex && IsSelectableIndex(rowIndex))
+                row.style.backgroundColor = HoverColor;
+        });
         row.RegisterCallback<PointerLeaveEvent>(_ =>
         {
             if (row.userData is int rowIndex)
-                row.style.backgroundColor = NaturalRowColor(rowIndex);
+                row.style.backgroundColor = RowBackgroundColor(rowIndex);
         });
         row.RegisterCallback<PointerDownEvent>(evt =>
         {
             if (evt.button != 0) return;
-            if (row.userData is int rowIndex && rowIndex >= 0 && rowIndex < _displayItems.Count)
+            if (row.userData is int rowIndex && IsSelectableIndex(rowIndex))
                 OnItemClicked(rowIndex);
         });
 
-        row.Add(icon);
-        row.Add(nameLabel);
         return row;
     }
 
     private void BindRow(VisualElement row, int index)
     {
-	    row.userData = index;
+        row.userData = index;
 
-	    var item      = _displayItems[index];
-	    var icon      = row.Q<Image>("icon");
-	    var nameLabel = row.Q<Label>("name");
+        var item          = _displayItems[index];
+        var itemContent   = row.Q("item-content");
+        var headerContent = row.Q("header-content");
+        bool isSelected   = _listView.selectedIndex == index;
 
-	    bool isSelected = _listView.selectedIndex == index;
+        if (item is GroupHeader groupHeader)
+        {
+            itemContent.style.display   = DisplayStyle.None;
+            headerContent.style.display = DisplayStyle.Flex;
+            row.style.backgroundColor   = HeaderColor;
+            row.style.paddingLeft       = 8f;
+            row.style.borderTopWidth    = 1f;
+            row.style.borderTopColor    = BorderColor;
+            row.Q<Label>("group-label").text = groupHeader.Title;
+            return;
+        }
 
-	    if (item == CreateSentinel)
-	    {
-		    row.style.backgroundColor = isSelected?AccentColor:NaturalRowColor(_listView.selectedIndex);
-		    nameLabel.style.color     = AccentColor;
-		    
-		    nameLabel.text = string.IsNullOrWhiteSpace(_searchText)
-			    ? "＋  New…  (type a name above)"
-			    : $"＋  Create \"{_searchText.Trim()}\"";
+        itemContent.style.display   = DisplayStyle.Flex;
+        headerContent.style.display = DisplayStyle.None;
+        row.style.paddingLeft       = 10f;
+        row.style.borderTopWidth    = 0f;
 
-		    icon.image = EditorGUIUtility.FindTexture("d_CreateAddNew");
-		    icon.style.display = icon.image != null ? DisplayStyle.Flex : DisplayStyle.None;
-	    }
-	    else if (item is ScriptableObject asset)
-	    {
-		    row.style.backgroundColor = isSelected ? AccentColor : NaturalRowColor(index);
-		    nameLabel.style.color     = TextColor;
-		    nameLabel.text            = asset.name;
+        var icon      = row.Q<Image>("icon");
+        var nameLabel = row.Q<Label>("name");
+        var typeLabel = row.Q<Label>("type");
 
-		    var assetIcon = EditorGUIUtility.ObjectContent(asset, asset.GetType()).image as Texture2D;
-		    icon.image         = assetIcon;
-		    icon.style.display = assetIcon != null ? DisplayStyle.Flex : DisplayStyle.None;
-	    }
-	    else if (item is Type concreteType)
-	    {
-		    row.style.backgroundColor = isSelected ? AccentColor : NaturalRowColor(index);
-		    nameLabel.style.color     = TextColor;
+        if (item == CreateSentinel)
+        {
+            row.style.backgroundColor = isSelected ? AccentColor : NaturalRowColor(index);
+            nameLabel.text            = string.IsNullOrWhiteSpace(_searchText)
+                ? "＋  New…  (type a name above)"
+                : $"＋  Create \"{_searchText.Trim()}\"";
+            nameLabel.style.color     = isSelected ? Color.white : AccentColor;
+            icon.image                = EditorGUIUtility.FindTexture("d_CreateAddNew");
+            icon.style.display        = icon.image != null ? DisplayStyle.Flex : DisplayStyle.None;
+            typeLabel.style.display   = DisplayStyle.None;
+            return;
+        }
 
-		    nameLabel.text = GetTypeDisplayPath(concreteType).Replace("/", " › ");
+        if (item is ScriptableObject asset)
+        {
+            row.style.backgroundColor = isSelected ? AccentColor : NaturalRowColor(index);
+            nameLabel.text            = asset.name;
+            nameLabel.style.color     = isSelected ? Color.white : TextColor;
 
-		    var typeIcon = EditorGUIUtility.ObjectContent(null, concreteType).image as Texture2D;
-		    icon.image         = typeIcon;
-		    icon.style.display = typeIcon != null ? DisplayStyle.Flex : DisplayStyle.None;
-	    }
-	    
-	    nameLabel.style.color = isSelected ? Color.white : TextColor;
+            var assetIcon          = EditorGUIUtility.ObjectContent(asset, asset.GetType()).image as Texture2D;
+            icon.image             = assetIcon;
+            icon.style.display     = assetIcon != null ? DisplayStyle.Flex : DisplayStyle.None;
+
+            bool showTypeLabel       = _listMode == SubAssetSelectorAttribute.ListMode.Flat;
+            typeLabel.style.display  = showTypeLabel ? DisplayStyle.Flex : DisplayStyle.None;
+            typeLabel.text           = ObjectNames.NicifyVariableName(asset.GetType().Name);
+            typeLabel.style.color    = isSelected ? SubtextColor : TypeLabelColor;
+            return;
+        }
+
+        if (item is Type concreteType)
+        {
+            row.style.backgroundColor = isSelected ? AccentColor : NaturalRowColor(index);
+            nameLabel.text            = GetTypeDisplayPath(concreteType).Replace("/", " › ");
+            nameLabel.style.color     = isSelected ? Color.white : TextColor;
+
+            var typeIcon           = EditorGUIUtility.ObjectContent(null, concreteType).image as Texture2D;
+            icon.image             = typeIcon;
+            icon.style.display     = typeIcon != null ? DisplayStyle.Flex : DisplayStyle.None;
+            typeLabel.style.display = DisplayStyle.None;
+        }
     }
 
-    private Color NaturalRowColor(int index)
+    private Color NaturalRowColor(int index) =>
+        index % 2 == 0 ? new Color(0f, 0f, 0f, 0f) : RowAltColor;
+
+    // Returns the correct resting background for any row index, including recycled header rows.
+    private Color RowBackgroundColor(int index)
     {
-        // The create sentinel keeps its tinted background even after hover-leave.
-        /*if (_displayItems.Count > index && _displayItems[index] == CreateSentinel)
-            return CreateRowColor;*/
-        return index % 2 == 0 ? new Color(0f, 0f, 0f, 0f) : RowAltColor;
+        if (index >= 0 && index < _displayItems.Count && _displayItems[index] is GroupHeader)
+            return HeaderColor;
+        return NaturalRowColor(index);
+    }
+
+    // ── Index helpers ─────────────────────────────────────────────────────────
+
+    private bool IsSelectableIndex(int index) =>
+        index >= 0
+        && index < _displayItems.Count
+        && _displayItems[index] is not GroupHeader;
+
+    /// <summary>
+    /// Walks the display list starting just past <paramref name="fromExclusive"/> in <paramref name="direction"/>
+    /// (+1 or -1) and returns the first index that is selectable (not a GroupHeader). Returns -1 if none found.
+    /// </summary>
+    private int FindSelectableIndex(int fromExclusive, int direction)
+    {
+        var index = fromExclusive + direction;
+        while (index >= 0 && index < _displayItems.Count)
+        {
+            if (IsSelectableIndex(index)) return index;
+            index += direction;
+        }
+        return -1;
     }
 
     // ── Data refresh ──────────────────────────────────────────────────────────
 
     private void RefreshDisplayList()
     {
-	    _displayItems.Clear();
+        _displayItems.Clear();
 
-	    var query = _searchText.Trim().ToLowerInvariant();
+        var query = _searchText.Trim().ToLowerInvariant();
 
-	    if (_currentPage == Page.SelectAsset)
-	    {
-		    foreach (var asset in _allSubAssets)
-		    {
-			    if (string.IsNullOrEmpty(query) || asset.name.ToLowerInvariant().Contains(query))
-				    _displayItems.Add(asset);
-		    }
-		    _displayItems.Add(CreateSentinel);
-	    }
-	    else
-	    {
-		    foreach (var concreteType in _concreteTypes)
-		    {
-			    var displayPath = GetTypeDisplayPath(concreteType);
-			    if (string.IsNullOrEmpty(query) || displayPath.ToLowerInvariant().Contains(query))
-				    _displayItems.Add(concreteType);
-		    }
-	    }
+        if (_currentPage == Page.SelectAsset)
+        {
+            // Use groups only when in GroupedByType mode AND the user isn't actively searching.
+            // While searching, a flat result set is easier to scan than scattered groups.
+            bool useGroups = _listMode == SubAssetSelectorAttribute.ListMode.GroupedByType
+                             && string.IsNullOrEmpty(query);
 
-	    _listView.itemsSource = _displayItems;
-	    _listView.Rebuild();
+            if (useGroups)
+            {
+                var groups = _allSubAssets
+                    .GroupBy(asset => asset.GetType())
+                    .OrderBy(g => ObjectNames.NicifyVariableName(g.Key.Name));
 
-	    // 👇 NEW LOGIC
-	    if (!string.IsNullOrEmpty(_searchText) && _displayItems.Count > 0)
-	    {
-		    _listView.selectedIndex = 0;
-		    _listView.ScrollToItem(0);
-	    }
-	    else
-	    {
-		    _listView.ClearSelection();
-	    }
+                foreach (var group in groups)
+                {
+                    _displayItems.Add(new GroupHeader(ObjectNames.NicifyVariableName(group.Key.Name)));
+                    foreach (var asset in group)
+                        _displayItems.Add(asset);
+                }
+            }
+            else
+            {
+                foreach (var asset in _allSubAssets)
+                {
+                    if (string.IsNullOrEmpty(query) || asset.name.ToLowerInvariant().Contains(query))
+                        _displayItems.Add(asset);
+                }
+            }
+
+            _displayItems.Add(CreateSentinel);
+        }
+        else
+        {
+            foreach (var concreteType in _concreteTypes)
+            {
+                var displayPath = GetTypeDisplayPath(concreteType);
+                if (string.IsNullOrEmpty(query) || displayPath.ToLowerInvariant().Contains(query))
+                    _displayItems.Add(concreteType);
+            }
+        }
+
+        _listView.itemsSource = _displayItems;
+        _listView.Rebuild();
+
+        if (!string.IsNullOrEmpty(_searchText) && _displayItems.Count > 0)
+        {
+            var firstSelectable = FindSelectableIndex(-1, 1);
+            if (firstSelectable >= 0)
+            {
+                _listView.selectedIndex = firstSelectable;
+                _listView.ScrollToItem(firstSelectable);
+            }
+        }
+        else
+        {
+            _listView.ClearSelection();
+        }
     }
 
     // ── Navigation ────────────────────────────────────────────────────────────
@@ -431,6 +570,8 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
     {
         var item = _displayItems[index];
 
+        if (item is GroupHeader) return;
+
         if (item == CreateSentinel)
         {
             HandleCreateNew();
@@ -470,22 +611,22 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
     private void CreateAndAssign(string name, Type type)
     {
-	    if (IsScenePath(_containerAssetPath))
-	    {
-		    Debug.LogError("[SubAssetSelector] Cannot create sub-assets inside a scene. " +
-			    "Use a ScriptableObject asset as the container instead.");
-		    return;
-	    }
+        if (IsScenePath(_containerAssetPath))
+        {
+            Debug.LogError("[SubAssetSelector] Cannot create sub-assets inside a scene. " +
+                "Use a ScriptableObject asset as the container instead.");
+            return;
+        }
 
-	    var newAsset  = ScriptableObject.CreateInstance(type);
-	    newAsset.name = name;
+        var newAsset  = ScriptableObject.CreateInstance(type);
+        newAsset.name = name;
 
-	    Undo.RegisterCreatedObjectUndo(newAsset, $"Create {name}");
-	    AssetDatabase.AddObjectToAsset(newAsset, _containerAssetPath);
-	    AssetDatabase.SaveAssets();
+        Undo.RegisterCreatedObjectUndo(newAsset, $"Create {name}");
+        AssetDatabase.AddObjectToAsset(newAsset, _containerAssetPath);
+        AssetDatabase.SaveAssets();
 
-	    _onSelected?.Invoke(newAsset);
-	    Close();
+        _onSelected?.Invoke(newAsset);
+        Close();
     }
 
     // ── Keyboard ──────────────────────────────────────────────────────────────
@@ -505,20 +646,19 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
         switch (evt.keyCode)
         {
-	        case KeyCode.Delete:
-	        {
-		        if (_currentPage               == Page.SelectAsset
-		            && _listView.selectedIndex >= 0
-		            && _listView.selectedIndex < _displayItems.Count
-		            && _displayItems[_listView.selectedIndex] is ScriptableObject toDelete)
-		        {
-			        
-			        TryDeleteSelected(toDelete);
-		        }
-		        evt.StopPropagation();
-		        return;
-	        }
-	        
+            case KeyCode.Delete:
+            {
+                if (_currentPage               == Page.SelectAsset
+                    && _listView.selectedIndex >= 0
+                    && _listView.selectedIndex < _displayItems.Count
+                    && _displayItems[_listView.selectedIndex] is ScriptableObject toDelete)
+                {
+                    TryDeleteSelected(toDelete);
+                }
+                evt.StopPropagation();
+                return;
+            }
+
             case KeyCode.Escape:
                 if (_currentPage == Page.SelectType)
                     NavigateBackToAssetPage();
@@ -536,21 +676,28 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
             case KeyCode.UpArrow:
             {
-                var nextIndex = Mathf.Max(0, _listView.selectedIndex - 1);
-                if (_listView.selectedIndex < 0 && _displayItems.Count > 0) nextIndex = 0;
-                _listView.selectedIndex = nextIndex;
-                _listView.ScrollToItem(nextIndex);
+                var nextIndex = _listView.selectedIndex >= 0
+                    ? FindSelectableIndex(_listView.selectedIndex, -1)
+                    : FindSelectableIndex(_displayItems.Count, -1);
+                if (nextIndex >= 0)
+                {
+                    _listView.selectedIndex = nextIndex;
+                    _listView.ScrollToItem(nextIndex);
+                }
                 evt.StopPropagation();
                 return;
             }
 
             case KeyCode.DownArrow:
             {
-                var currentIndex = _listView.selectedIndex;
-                var nextIndex    = currentIndex < _displayItems.Count - 1 ? currentIndex + 1 : currentIndex;
-                if (currentIndex < 0 && _displayItems.Count > 0) nextIndex = 0;
-                _listView.selectedIndex = nextIndex;
-                _listView.ScrollToItem(nextIndex);
+                var nextIndex = _listView.selectedIndex >= 0
+                    ? FindSelectableIndex(_listView.selectedIndex, 1)
+                    : FindSelectableIndex(-1, 1);
+                if (nextIndex >= 0)
+                {
+                    _listView.selectedIndex = nextIndex;
+                    _listView.ScrollToItem(nextIndex);
+                }
                 evt.StopPropagation();
                 return;
             }
@@ -603,83 +750,81 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         }
         return false;
     }
-    
+
     // ── Deletion ──────────────────────────────────────────────────────────────
 
     private void TryDeleteSelected(ScriptableObject target)
     {
-	    int refCount = CountReferences(target, out List<string> paths);
-	    if (refCount > 0)
-	    {
-		    StringBuilder builder = new StringBuilder($"\"{target.name}\" still has {refCount} reference{(refCount == 1 ? "" : "s")} " +
-			    $"in the container:");
+        int refCount = CountReferences(target, out List<string> paths);
+        if (refCount > 0)
+        {
+            var builder = new StringBuilder(
+                $"\"{target.name}\" still has {refCount} reference{(refCount == 1 ? "" : "s")} in the container:");
 
-		    foreach (string path in paths)
-		    {
-			    builder.AppendLine(path);
-		    }
+            foreach (string path in paths)
+                builder.AppendLine(path);
 
-		    builder.AppendLine("\n\nDelete anyway?");
-		    
-		    bool confirmed = EditorUtility.DisplayDialog(
-			    "Delete Sub-Asset",
-			    builder.ToString()
-			    ,
-			    "Delete",
-			    "Cancel");
+            builder.AppendLine("\n\nDelete anyway?");
 
-		    if (!confirmed) return;
-	    }
+            bool confirmed = EditorUtility.DisplayDialog(
+                "Delete Sub-Asset",
+                builder.ToString(),
+                "Delete",
+                "Cancel");
 
-	    Undo.DestroyObjectImmediate(target);
-	    AssetDatabase.SaveAssets();
+            if (!confirmed) return;
+        }
 
-	    LoadSubAssets();
-	    RefreshDisplayList();
+        Undo.DestroyObjectImmediate(target);
+        AssetDatabase.SaveAssets();
+
+        LoadSubAssets();
+        RefreshDisplayList();
     }
 
     private int CountReferences(ScriptableObject target, out List<string> list)
     {
-	    list = new List<string>();
-	    var objects = _containerAssetPath.EndsWith(".unity", StringComparison.OrdinalIgnoreCase)
-		    ? CollectSceneObjects()
-		    : CollectAssetObjects();
+        list = new List<string>();
+        var objects = _containerAssetPath.EndsWith(".unity", StringComparison.OrdinalIgnoreCase)
+            ? CollectSceneObjects()
+            : CollectAssetObjects();
 
-	    int count = 0;
-	    foreach (var obj in objects)
-	    {
-		    if (obj == null || obj == target) continue;
+        int count = 0;
+        foreach (var obj in objects)
+        {
+            if (obj == null || obj == target) continue;
 
-		    var so = new SerializedObject(obj);
-		    var prop = so.GetIterator();
-		    while (prop.NextVisible(true))
-		    {
-			    if (prop.propertyType            == SerializedPropertyType.ObjectReference
-			        && prop.objectReferenceValue == target)
-			    {
-				    count++;
-				    list.Add(prop.propertyPath);
-			    }
-		    }
-	    }
-	    return count;
+            var serializedObject = new SerializedObject(obj);
+            var property         = serializedObject.GetIterator();
+            while (property.NextVisible(true))
+            {
+                if (property.propertyType            == SerializedPropertyType.ObjectReference
+                    && property.objectReferenceValue == target)
+                {
+                    count++;
+                    list.Add(property.propertyPath);
+                }
+            }
+        }
+        return count;
     }
 
-    private IEnumerable<Object> CollectAssetObjects() => AssetDatabase.LoadAllAssetsAtPath(_containerAssetPath).Where(o => o != null);
+    private IEnumerable<Object> CollectAssetObjects() =>
+        AssetDatabase.LoadAllAssetsAtPath(_containerAssetPath).Where(o => o != null);
 
     private IEnumerable<Object> CollectSceneObjects()
     {
-	    for (int i = 0; i < SceneManager.loadedSceneCount; i++)
-	    {
-		    var scene = SceneManager.GetSceneAt(i);
-		    if (scene.path != _containerAssetPath) continue;
+        for (int i = 0; i < SceneManager.loadedSceneCount; i++)
+        {
+            var scene = SceneManager.GetSceneAt(i);
+            if (scene.path != _containerAssetPath) continue;
 
-		    return scene.GetRootGameObjects()
-		                .SelectMany(go => go.GetComponentsInChildren<Component>(includeInactive: true))
-		                .Cast<Object>();
-	    }
+            return scene.GetRootGameObjects()
+                        .SelectMany(go => go.GetComponentsInChildren<Component>(includeInactive: true))
+                        .Cast<Object>();
+        }
 
-	    return Array.Empty<Object>();
+        return Array.Empty<Object>();
     }
 
     /// <summary>
@@ -689,14 +834,14 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
     /// </summary>
     private static string GetTypeDisplayPath(Type type)
     {
-        foreach (var attribute in type.GetCustomAttributes(inherit: false))
+        foreach (var attr in type.GetCustomAttributes(inherit: false))
         {
-            if (attribute.GetType().Name != "SelectorNameAttribute") continue;
+            if (attr.GetType().Name != "SelectorNameAttribute") continue;
 
             // Read via reflection to avoid a hard assembly dependency on the attribute's assembly.
-            var pathProperty = attribute.GetType().GetProperty("Path")
-                            ?? attribute.GetType().GetProperty("Name");
-            if (pathProperty?.GetValue(attribute) is string path && !string.IsNullOrEmpty(path))
+            var pathProperty = attr.GetType().GetProperty("Path")
+                            ?? attr.GetType().GetProperty("Name");
+            if (pathProperty?.GetValue(attr) is string path && !string.IsNullOrEmpty(path))
                 return path;
         }
 

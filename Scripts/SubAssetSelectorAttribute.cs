@@ -1,10 +1,26 @@
-﻿using System;
-using UnityEngine;
+﻿using UnityEngine;
 
-/// <summary>
-/// Displays a searchable dropdown of sub-assets of the field's type stored inside the same
-/// container asset (ScriptableObject) or scene file (GameObject in a scene).
-/// Supports inline creation of new sub-assets by typing a name and selecting "＋ Create".
-/// </summary>
-[AttributeUsage(AttributeTargets.Field)]
-public class SubAssetSelectorAttribute : PropertyAttribute { }
+[System.AttributeUsage(System.AttributeTargets.Field, AllowMultiple = false)]
+public sealed class SubAssetSelectorAttribute : PropertyAttribute
+{
+	public readonly ListMode Mode;
+
+	public SubAssetSelectorAttribute(ListMode mode = ListMode.Flat)
+	{
+		Mode = mode;
+	}
+
+	public enum ListMode
+	{
+		/// <summary>
+		/// All sub-assets in a single flat list. Shows a subtle type label on the right of each row.
+		/// </summary>
+		Flat,
+
+		/// <summary>
+		/// Sub-assets grouped under their concrete type name. No type label on individual rows.
+		/// Groups collapse into a flat list when the user is searching.
+		/// </summary>
+		GroupedByType,
+	}
+}
