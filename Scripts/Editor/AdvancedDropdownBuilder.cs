@@ -340,6 +340,7 @@ internal sealed class DropdownWindow : EditorWindow
             makeItem        = MakeRow,
             bindItem        = BindRow,
         };
+        _listView.selectionChanged += _ =>_listView.RefreshItems();
         _listView.style.flexGrow = 1;
         return _listView;
     }
@@ -394,28 +395,30 @@ internal sealed class DropdownWindow : EditorWindow
 
     private void BindRow(VisualElement row, int index)
     {
-        row.userData = index;
+	    row.userData = index;
 
-        var node    = _display[index];
-        var iconImg = row.Q<Image>("icon");
-        var label   = row.Q<Label>("label");
-        var arrow   = row.Q<Label>("arrow");
+	    var node    = _display[index];
+	    var iconImg = row.Q<Image>("icon");
+	    var label   = row.Q<Label>("label");
+	    var arrow   = row.Q<Label>("arrow");
 
-        label.text    = node.Label;
-        row.tooltip   = node.Tooltip ?? string.Empty;
+	    label.text  = node.Label;
+	    row.tooltip = node.Tooltip ?? string.Empty;
 
-        if (iconImg != null)
-        {
-            iconImg.image         = node.Icon;
-            iconImg.style.display = node.Icon != null ? DisplayStyle.Flex : DisplayStyle.None;
-        }
+	    if (iconImg != null)
+	    {
+		    iconImg.image         = node.Icon;
+		    iconImg.style.display = node.Icon != null ? DisplayStyle.Flex : DisplayStyle.None;
+	    }
 
-        if (arrow != null)
-            arrow.style.display = node.IsFolder ? DisplayStyle.Flex : DisplayStyle.None;
+	    if (arrow != null)
+		    arrow.style.display = node.IsFolder ? DisplayStyle.Flex : DisplayStyle.None;
 
-        // Subtle alternating row tint
-        row.style.backgroundColor = index % 2 == 0
-            ? new Color(0, 0, 0, 0) : C_ROW_ALT;
+	    bool isSelected = index == _listView.selectedIndex;
+
+	    row.style.backgroundColor = isSelected
+		    ? C_HOVER
+		    : (index % 2 == 0 ? new Color(0, 0, 0, 0) : C_ROW_ALT);
     }
 
     // ── Navigation ────────────────────────────────────────────────────────────
