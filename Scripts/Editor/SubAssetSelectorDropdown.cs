@@ -613,7 +613,7 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         var newName = _searchText.Trim();
         if (string.IsNullOrEmpty(newName))
         {
-            _searchField.Focus();
+	        HighlightSearchField();
             return;
         }
 
@@ -626,6 +626,23 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         CreateAndAssign(newName, _fieldType);
     }
 
+    private void HighlightSearchField()
+    {
+	    FocusSearchField();
+
+	    _searchField.style.borderBottomWidth = 1;
+	    _searchField.style.borderBottomColor = new Color(0.8f, 0.8f, 0.2f);
+	    
+	    // Restore after short delay
+	    _searchField.schedule.Execute(() =>
+	    {
+		    _searchField.style.borderBottomWidth = 0;
+	    }).StartingIn(250);
+
+	    // Optional: also select text (even if empty, gives cursor feedback)
+	    _searchField.SelectAll();
+    }
+    
     private void CreateAndAssign(string name, Type type)
     {
         if (IsScenePath(_containerAssetPath))
