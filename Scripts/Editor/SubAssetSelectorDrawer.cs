@@ -1,7 +1,9 @@
-﻿using UnityEditor;
+﻿using System;
+using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Object = UnityEngine.Object;
 
 [CustomPropertyDrawer(typeof(SubAssetSelectorAttribute))]
 public sealed class SubAssetSelectorDrawer : PropertyDrawer
@@ -77,6 +79,13 @@ public sealed class SubAssetSelectorDrawer : PropertyDrawer
                 return;
             }
 
+            if (containerPath.EndsWith(".unity", StringComparison.OrdinalIgnoreCase))
+            {
+	            Debug.LogWarning("[SubAssetSelector] Scene objects are not supported. " +
+		            "Move the ScriptableObject field to a ScriptableObject asset instead.");
+	            return;
+            }
+            
             // Capture path and type now — SerializedProperty may be invalid in the async callback.
             var serializedObject = property.serializedObject;
             var propertyPath     = property.propertyPath;

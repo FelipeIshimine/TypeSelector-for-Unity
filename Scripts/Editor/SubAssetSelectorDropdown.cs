@@ -1,9 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using UnityEditor.SceneManagement;
+using UnityEngine.SceneManagement;
+using Object = UnityEngine.Object;
 
 /// <summary>
 /// Searchable dropdown that lists sub-assets of a given type inside a container asset.
@@ -88,14 +92,23 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
     private void LoadSubAssets()
     {
-        _allSubAssets = AssetDatabase.LoadAllAssetsAtPath(_containerAssetPath)
-            .Where(asset => asset != null
-                         && !AssetDatabase.IsMainAsset(asset)
-                         && _fieldType.IsAssignableFrom(asset.GetType()))
-            .Cast<ScriptableObject>()
-            .OrderBy(asset => asset.name)
-            .ToList();
+	    if (IsScenePath(_containerAssetPath))
+	    {
+		    _allSubAssets = new List<ScriptableObject>();
+		    return;
+	    }
+
+	    _allSubAssets = AssetDatabase.LoadAllAssetsAtPath(_containerAssetPath)
+	                                 .Where(asset => asset != null
+		                                 && !AssetDatabase.IsMainAsset(asset)
+		                                 && _fieldType.IsAssignableFrom(asset.GetType()))
+	                                 .Cast<ScriptableObject>()
+	                                 .OrderBy(asset => asset.name)
+	                                 .ToList();
     }
+
+    private static bool IsScenePath(string path) =>
+	    path.EndsWith(".unity", StringComparison.OrdinalIgnoreCase);
 
     private void EnsureConcreteTypesLoaded()
     {
@@ -457,15 +470,22 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
     private void CreateAndAssign(string name, Type type)
     {
-        var newAsset  = ScriptableObject.CreateInstance(type);
-        newAsset.name = name;
+	    if (IsScenePath(_containerAssetPath))
+	    {
+		    Debug.LogError("[SubAssetSelector] Cannot create sub-assets inside a scene. " +
+			    "Use a ScriptableObject asset as the container instead.");
+		    return;
+	    }
 
-        Undo.RegisterCreatedObjectUndo(newAsset, $"Create {name}");
-        AssetDatabase.AddObjectToAsset(newAsset, _containerAssetPath);
-        AssetDatabase.SaveAssets();
+	    var newAsset  = ScriptableObject.CreateInstance(type);
+	    newAsset.name = name;
 
-        _onSelected?.Invoke(newAsset);
-        Close();
+	    Undo.RegisterCreatedObjectUndo(newAsset, $"Create {name}");
+	    AssetDatabase.AddObjectToAsset(newAsset, _containerAssetPath);
+	    AssetDatabase.SaveAssets();
+
+	    _onSelected?.Invoke(newAsset);
+	    Close();
     }
 
     // ── Keyboard ──────────────────────────────────────────────────────────────
@@ -485,6 +505,20 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
         switch (evt.keyCode)
         {
+	        case KeyCode.Delete:
+	        {
+		        if (_currentPage               == Page.SelectAsset
+		            && _listView.selectedIndex >= 0
+		            && _listView.selectedIndex < _displayItems.Count
+		            && _displayItems[_listView.selectedIndex] is ScriptableObject toDelete)
+		        {
+			        
+			        TryDeleteSelected(toDelete);
+		        }
+		        evt.StopPropagation();
+		        return;
+	        }
+	        
             case KeyCode.Escape:
                 if (_currentPage == Page.SelectType)
                     NavigateBackToAssetPage();
@@ -568,6 +602,84 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
             focusedElement = focusedElement.parent;
         }
         return false;
+    }
+    
+    // ── Deletion ──────────────────────────────────────────────────────────────
+
+    private void TryDeleteSelected(ScriptableObject target)
+    {
+	    int refCount = CountReferences(target, out List<string> paths);
+	    if (refCount > 0)
+	    {
+		    StringBuilder builder = new StringBuilder($"\"{target.name}\" still has {refCount} reference{(refCount == 1 ? "" : "s")} " +
+			    $"in the container:");
+
+		    foreach (string path in paths)
+		    {
+			    builder.AppendLine(path);
+		    }
+
+		    builder.AppendLine("\n\nDelete anyway?");
+		    
+		    bool confirmed = EditorUtility.DisplayDialog(
+			    "Delete Sub-Asset",
+			    builder.ToString()
+			    ,
+			    "Delete",
+			    "Cancel");
+
+		    if (!confirmed) return;
+	    }
+
+	    Undo.DestroyObjectImmediate(target);
+	    AssetDatabase.SaveAssets();
+
+	    LoadSubAssets();
+	    RefreshDisplayList();
+    }
+
+    private int CountReferences(ScriptableObject target, out List<string> list)
+    {
+	    list = new List<string>();
+	    var objects = _containerAssetPath.EndsWith(".unity", StringComparison.OrdinalIgnoreCase)
+		    ? CollectSceneObjects()
+		    : CollectAssetObjects();
+
+	    int count = 0;
+	    foreach (var obj in objects)
+	    {
+		    if (obj == null || obj == target) continue;
+
+		    var so = new SerializedObject(obj);
+		    var prop = so.GetIterator();
+		    while (prop.NextVisible(true))
+		    {
+			    if (prop.propertyType            == SerializedPropertyType.ObjectReference
+			        && prop.objectReferenceValue == target)
+			    {
+				    count++;
+				    list.Add(prop.propertyPath);
+			    }
+		    }
+	    }
+	    return count;
+    }
+
+    private IEnumerable<Object> CollectAssetObjects() => AssetDatabase.LoadAllAssetsAtPath(_containerAssetPath).Where(o => o != null);
+
+    private IEnumerable<Object> CollectSceneObjects()
+    {
+	    for (int i = 0; i < SceneManager.loadedSceneCount; i++)
+	    {
+		    var scene = SceneManager.GetSceneAt(i);
+		    if (scene.path != _containerAssetPath) continue;
+
+		    return scene.GetRootGameObjects()
+		                .SelectMany(go => go.GetComponentsInChildren<Component>(includeInactive: true))
+		                .Cast<Object>();
+	    }
+
+	    return Array.Empty<Object>();
     }
 
     /// <summary>
