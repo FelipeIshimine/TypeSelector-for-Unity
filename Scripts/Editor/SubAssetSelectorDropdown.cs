@@ -82,8 +82,7 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
     static readonly Color HoverColor      = new(0.28f, 0.28f, 0.28f);
     static readonly Color TextColor       = new(0.85f, 0.85f, 0.85f);
     static readonly Color SubtextColor    = new(0.50f, 0.50f, 0.50f);
-    static readonly Color AccentColor     = new(0.25f, 0.49f, 0.96f);
-    static readonly Color CreateRowColor  = new(0.20f, 0.27f, 0.40f, 1.00f);
+    static Color AccentColor     => HoverColor;
 
     // ── Data loading ──────────────────────────────────────────────────────────
 
@@ -220,6 +219,10 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
             bindItem        = BindRow,
         };
         _listView.style.flexGrow = 1;
+        // If the ListView somehow receives focus (e.g. user clicks empty space), send it back
+        // to the search field. We keep the ListView focusable so selection highlights render.
+        _listView.RegisterCallback<FocusInEvent>(_ => FocusSearchField());
+        _listView.selectionChanged += _ => _listView.RefreshItems();
         return _listView;
     }
 
@@ -230,6 +233,8 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         row.style.alignItems    = Align.Center;
         row.style.paddingLeft   = 10f;
         row.style.paddingRight  = 8f;
+        // Rows must not steal keyboard focus — all input stays in the search field.
+        row.focusable = false;
 
         var icon = new Image { name = "icon" };
         icon.style.width       = 16f;
@@ -265,51 +270,56 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
     private void BindRow(VisualElement row, int index)
     {
-        row.userData = index;
+	    row.userData = index;
 
-        var item      = _displayItems[index];
-        var icon      = row.Q<Image>("icon");
-        var nameLabel = row.Q<Label>("name");
+	    var item      = _displayItems[index];
+	    var icon      = row.Q<Image>("icon");
+	    var nameLabel = row.Q<Label>("name");
 
-        if (item == CreateSentinel)
-        {
-            row.style.backgroundColor = CreateRowColor;
-            nameLabel.style.color     = AccentColor;
-            nameLabel.text = string.IsNullOrWhiteSpace(_searchText)
-                ? "＋  New…  (type a name above)"
-                : $"＋  Create \"{_searchText.Trim()}\"";
+	    bool isSelected = _listView.selectedIndex == index;
 
-            icon.image         = EditorGUIUtility.FindTexture("d_CreateAddNew");
-            icon.style.display = icon.image != null ? DisplayStyle.Flex : DisplayStyle.None;
-        }
-        else if (item is ScriptableObject asset)
-        {
-            row.style.backgroundColor = NaturalRowColor(index);
-            nameLabel.style.color     = TextColor;
-            nameLabel.text            = asset.name;
+	    if (item == CreateSentinel)
+	    {
+		    row.style.backgroundColor = isSelected?AccentColor:NaturalRowColor(_listView.selectedIndex);
+		    nameLabel.style.color     = AccentColor;
+		    
+		    nameLabel.text = string.IsNullOrWhiteSpace(_searchText)
+			    ? "＋  New…  (type a name above)"
+			    : $"＋  Create \"{_searchText.Trim()}\"";
 
-            var assetIcon = EditorGUIUtility.ObjectContent(asset, asset.GetType()).image as Texture2D;
-            icon.image         = assetIcon;
-            icon.style.display = assetIcon != null ? DisplayStyle.Flex : DisplayStyle.None;
-        }
-        else if (item is Type concreteType)
-        {
-            row.style.backgroundColor = NaturalRowColor(index);
-            nameLabel.style.color     = TextColor;
-            // Replace "/" separators from SelectorName paths with a readable arrow.
-            nameLabel.text = GetTypeDisplayPath(concreteType).Replace("/", " › ");
+		    icon.image = EditorGUIUtility.FindTexture("d_CreateAddNew");
+		    icon.style.display = icon.image != null ? DisplayStyle.Flex : DisplayStyle.None;
+	    }
+	    else if (item is ScriptableObject asset)
+	    {
+		    row.style.backgroundColor = isSelected ? AccentColor : NaturalRowColor(index);
+		    nameLabel.style.color     = TextColor;
+		    nameLabel.text            = asset.name;
 
-            var typeIcon = EditorGUIUtility.ObjectContent(null, concreteType).image as Texture2D;
-            icon.image         = typeIcon;
-            icon.style.display = typeIcon != null ? DisplayStyle.Flex : DisplayStyle.None;
-        }
+		    var assetIcon = EditorGUIUtility.ObjectContent(asset, asset.GetType()).image as Texture2D;
+		    icon.image         = assetIcon;
+		    icon.style.display = assetIcon != null ? DisplayStyle.Flex : DisplayStyle.None;
+	    }
+	    else if (item is Type concreteType)
+	    {
+		    row.style.backgroundColor = isSelected ? AccentColor : NaturalRowColor(index);
+		    nameLabel.style.color     = TextColor;
+
+		    nameLabel.text = GetTypeDisplayPath(concreteType).Replace("/", " › ");
+
+		    var typeIcon = EditorGUIUtility.ObjectContent(null, concreteType).image as Texture2D;
+		    icon.image         = typeIcon;
+		    icon.style.display = typeIcon != null ? DisplayStyle.Flex : DisplayStyle.None;
+	    }
+	    
+	    nameLabel.style.color = isSelected ? Color.white : TextColor;
     }
 
     private Color NaturalRowColor(int index)
     {
         // The create sentinel keeps its tinted background even after hover-leave.
-        if (_displayItems.Count > index && _displayItems[index] == CreateSentinel)
-            return CreateRowColor;
+        /*if (_displayItems.Count > index && _displayItems[index] == CreateSentinel)
+            return CreateRowColor;*/
         return index % 2 == 0 ? new Color(0f, 0f, 0f, 0f) : RowAltColor;
     }
 
@@ -317,32 +327,42 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
     private void RefreshDisplayList()
     {
-        _displayItems.Clear();
+	    _displayItems.Clear();
 
-        var query = _searchText.Trim().ToLowerInvariant();
+	    var query = _searchText.Trim().ToLowerInvariant();
 
-        if (_currentPage == Page.SelectAsset)
-        {
-            _displayItems.Add(CreateSentinel);
-            foreach (var asset in _allSubAssets)
-            {
-                if (string.IsNullOrEmpty(query) || asset.name.ToLowerInvariant().Contains(query))
-                    _displayItems.Add(asset);
-            }
-        }
-        else // SelectType
-        {
-            foreach (var concreteType in _concreteTypes)
-            {
-                var displayPath = GetTypeDisplayPath(concreteType);
-                if (string.IsNullOrEmpty(query) || displayPath.ToLowerInvariant().Contains(query))
-                    _displayItems.Add(concreteType);
-            }
-        }
+	    if (_currentPage == Page.SelectAsset)
+	    {
+		    foreach (var asset in _allSubAssets)
+		    {
+			    if (string.IsNullOrEmpty(query) || asset.name.ToLowerInvariant().Contains(query))
+				    _displayItems.Add(asset);
+		    }
+		    _displayItems.Add(CreateSentinel);
+	    }
+	    else
+	    {
+		    foreach (var concreteType in _concreteTypes)
+		    {
+			    var displayPath = GetTypeDisplayPath(concreteType);
+			    if (string.IsNullOrEmpty(query) || displayPath.ToLowerInvariant().Contains(query))
+				    _displayItems.Add(concreteType);
+		    }
+	    }
 
-        _listView.itemsSource = _displayItems;
-        _listView.Rebuild();
-        _listView.ClearSelection();
+	    _listView.itemsSource = _displayItems;
+	    _listView.Rebuild();
+
+	    // 👇 NEW LOGIC
+	    if (!string.IsNullOrEmpty(_searchText) && _displayItems.Count > 0)
+	    {
+		    _listView.selectedIndex = 0;
+		    _listView.ScrollToItem(0);
+	    }
+	    else
+	    {
+		    _listView.ClearSelection();
+	    }
     }
 
     // ── Navigation ────────────────────────────────────────────────────────────
@@ -371,7 +391,7 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
         _searchPlaceholder.style.display = DisplayStyle.Flex;
 
         RefreshDisplayList();
-        _searchField.Focus();
+        FocusSearchField();
     }
 
     private void NavigateBackToAssetPage()
@@ -389,7 +409,7 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
             : DisplayStyle.None;
 
         RefreshDisplayList();
-        _searchField.Focus();
+        FocusSearchField();
     }
 
     // ── Interaction ───────────────────────────────────────────────────────────
@@ -452,6 +472,17 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
     private void OnKeyDown(KeyDownEvent evt)
     {
+        // Any printable character typed while the search field doesn't have focus
+        // redirects input there. This covers the case where the user navigated
+        // the list with Up/Down and the ListView somehow took focus.
+        if (evt.character != '\0' && !char.IsControl(evt.character) && !SearchFieldContainsFocus())
+        {
+            _searchField.value += evt.character.ToString();
+            FocusSearchField();
+            evt.StopPropagation();
+            return;
+        }
+
         switch (evt.keyCode)
         {
             case KeyCode.Escape:
@@ -513,6 +544,31 @@ internal sealed class SubAssetSelectorDropdown : EditorWindow
 
     private string BuildAssetPageTitle() =>
         $"Select {ObjectNames.NicifyVariableName(_fieldType.Name)}";
+
+    /// <summary>
+    /// Defers focus to the search field by one frame so it fires after the current event
+    /// pipeline (e.g. a PointerDown that triggered navigation) has fully settled.
+    /// Direct Focus() calls can be overwritten by the event system restoring focus to the
+    /// element that was just clicked, which may no longer be in the hierarchy.
+    /// </summary>
+    private void FocusSearchField() =>
+        rootVisualElement.schedule.Execute(() => _searchField.Focus()).StartingIn(16);
+
+    /// <summary>
+    /// Returns true if the search field or any of its descendants currently has keyboard focus.
+    /// TextField's actual focus lives on its inner TextElement, so checking the TextField
+    /// itself is not sufficient — we walk up from the focused element instead.
+    /// </summary>
+    private bool SearchFieldContainsFocus()
+    {
+        var focusedElement = rootVisualElement?.panel?.focusController?.focusedElement as VisualElement;
+        while (focusedElement != null)
+        {
+            if (focusedElement == _searchField) return true;
+            focusedElement = focusedElement.parent;
+        }
+        return false;
+    }
 
     /// <summary>
     /// Returns the display path for a type in the type-picker list.
