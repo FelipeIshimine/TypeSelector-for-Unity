@@ -35,7 +35,33 @@ public sealed class SubAssetSelectorDrawer : PropertyDrawer
 
         container.Add(fieldLabel);
         container.Add(selectorButton);
+        container.Add(BuildClearButton(property));
+        
+        
+        
         return container;
+    }
+
+    private VisualElement BuildClearButton(SerializedProperty property)
+    {
+        var button = new Button()
+        {
+	        text = "X",
+	        style =
+	        {
+		        height = 18,
+		        width = 18,
+		        color = Color.gray
+	        }
+        };
+        button.clicked += () =>
+        {
+	        property.serializedObject.Update();
+	        property.objectReferenceValue = null;
+	        property.serializedObject.ApplyModifiedProperties();
+        };
+      
+        return button;
     }
 
     private Button BuildSelectorButton(SerializedProperty property)
