@@ -26,8 +26,9 @@ public static class SubAssetSelectorUI
 		container.style.alignItems    = Align.Center;
 		container.style.minHeight     = 20f;
 
-		var fieldLabel = new Label(property.displayName);
-		fieldLabel.style.width          = 120f;
+		var fieldLabel = new Label($"[{fieldInfo.FieldType.Name}] {property.displayName}");
+		fieldLabel.style.width          = 160;
+		fieldLabel.style.flexGrow          = 1;
 		fieldLabel.style.minWidth       = 30f;
 		fieldLabel.style.flexShrink     = 0f;
 		fieldLabel.style.overflow       = Overflow.Hidden;
@@ -154,7 +155,7 @@ public static class SubAssetSelectorUI
     {
         if (currentValue != null)
         {
-            valueLabel.text        = currentValue.name;
+            valueLabel.text        = $"{currentValue.name}";
             valueLabel.style.color = StyleKeyword.Null;
         }
         else

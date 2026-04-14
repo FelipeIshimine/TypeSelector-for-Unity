@@ -331,7 +331,7 @@ namespace PillsList.Editor
                     }
 
                     ResetDraggedPill();
-                    evt.StopPropagation();
+                    evt.StopImmediatePropagation();
                     ShowAssetDropdown(
                         pill.worldBound,
                         $"Replace {ObjectNames.NicifyVariableName(objectType.Name)}",

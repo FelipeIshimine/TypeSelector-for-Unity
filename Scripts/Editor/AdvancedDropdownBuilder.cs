@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -58,7 +59,21 @@ public sealed class AdvancedDropdownBuilder
         foreach (var e in elements) { indices.Add(_values.Count); _values.Add(e); }
         return this;
     }
-
+    /// <summary>
+    /// Typed overload — stores values alongside paths.
+    /// Use <paramref name="values"/> directly in <see cref="SetCallback"/> to avoid manual index mapping.
+    /// </summary>
+    public AdvancedDropdownBuilder AddElements<T>(IEnumerable<(string path, T value)> elements, out T[] values)
+    {
+	    var arr = elements.ToArray();
+	    values = new T[arr.Length];
+	    for (int i = 0; i < arr.Length; i++)
+	    {
+		    values[i] = arr[i].value;
+		    _values.Add(new AdvancedDropdownPath(arr[i].path, null));
+	    }
+	    return this;
+    }
     public AdvancedDropdownBuilder AddElement(string path, Texture2D icon, out int index)
     {
         index = _values.Count; _values.Add(new(path, icon)); return this;
@@ -467,6 +482,12 @@ internal sealed class DropdownWindow : EditorWindow
         _listView.itemsSource = _display;
         _listView.Rebuild();
         _listView.ClearSelection();
+
+        if (_display.Count > 0)
+        {
+	        _listView.selectedIndex = 0;
+        }
+        
     }
 
     private static void CollectMatchingLeaves(DropdownNode node, string query, List<DropdownNode> results)
