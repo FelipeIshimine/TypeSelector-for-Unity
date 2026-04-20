@@ -43,10 +43,10 @@ namespace TypeSelector
                                           FieldInfo fieldInfo,
                                           TypeSelectorAttribute attribute)
         {
-	        if (IsCollectionField(fieldInfo))
+	        /*if (IsCollectionField(fieldInfo))
 	        {
 		        return BuildCollection(property, fieldInfo);
-	        }
+	        }*/
 	        return Build(property, fieldInfo.FieldType,attribute.Mode,attribute.Label);
         }
 
