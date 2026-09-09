@@ -162,7 +162,7 @@ namespace TypeSelector
             else if (drawMode != DrawMode.Inline)
                 activeTypeName.AddToClassList("show");
 
-            typeSelectorBtn.clicked += () => SelectorButtonClicked_ForProperty(typeSelectorBtn, property,declaredType);
+            typeSelectorBtn.clicked += () => SelectorButtonClicked_ForProperty(typeSelectorBtn, property,declaredType,showBaseType);
             typeSelectorBtn.RemoveFromHierarchy();
             container.Add(typeSelectorBtn);
 
@@ -342,17 +342,17 @@ namespace TypeSelector
 
         // ── Click handlers ────────────────────────────────────────────────────────
 
-        private static void SelectorButtonClicked_ForProperty(Button typeBtn, SerializedProperty property, Type declaredType)
+        private static void SelectorButtonClicked_ForProperty(Button typeBtn, SerializedProperty property, Type declaredType, bool showBaseType = false)
         {
 	        ShowTypeDropdown(typeBtn.worldBound, declaredType, chosenType =>
             {
                 property.managedReferenceValue = chosenType != null ? Activator.CreateInstance(chosenType) : null;
                 property.serializedObject.ApplyModifiedProperties();
                 typeBtn.parent?.Bind(property.serializedObject);
-            });
+            }, showBaseType);
         }
 
-        private static void SelectorButtonClicked_ForElement(Button typeBtn, SerializedProperty elementProp, SerializedProperty collectionProp, FieldInfo fieldInfo)
+        private static void SelectorButtonClicked_ForElement(Button typeBtn, SerializedProperty elementProp, SerializedProperty collectionProp, FieldInfo fieldInfo, bool showBaseType = false)
         {
             var declaredType = GetElementTargetType(fieldInfo);
 
@@ -380,13 +380,13 @@ namespace TypeSelector
                 collectionProp.serializedObject.ApplyModifiedProperties();
                 typeBtn.parent?.Bind(collectionProp.serializedObject);
                 typeBtn.text = GetButtonLabel(elementProp);
-            });
+            }, showBaseType);
         }
 
         // ── Dropdown ──────────────────────────────────────────────────────────────
 
         
-        private static void ShowTypeDropdown(Rect worldRect, Type targetType, Action<Type> onSelect)
+        private static void ShowTypeDropdown(Rect worldRect, Type targetType, Action<Type> onSelect, bool showBaseType = false)
         {
             if (targetType == null) { onSelect?.Invoke(null); return; }
 
@@ -448,21 +448,22 @@ namespace TypeSelector
                     candidates.Add(targetType);
             }
 
-            // Build (path, Type) pairs — null entry for "none"
-            (string path, Type type)[] pairs = candidates
+            // Build (path, rightText, Type) triples — null entry for "none"
+            (string path, string right, Type type)[] pairs = candidates
                                      .Select(t =>
                                      {
 	                                     var path = t.GetCustomAttributes(typeof(SelectorNameAttribute), false)
 	                                                 .OfType<SelectorNameAttribute>().FirstOrDefault()?.Name;
-	                                     return (path: string.IsNullOrEmpty(path) ? SelectorName.GetDisplayName(t) : path, type: t);
+	                                     string right = showBaseType ? BaseAnnotation(t) : null;
+	                                     return (path: string.IsNullOrEmpty(path) ? SelectorName.GetDisplayName(t) : path, right, type: t);
                                      })
-                                     .Append(("-null-", (Type)null))
+                                     .Append(("-null-", (string)null, (Type)null))
                                      .OrderBy(p => p.Item1, StringComparer.Ordinal)
                                      .ToArray();
 
             new AdvancedDropdownBuilder()
                 .WithTitle($"{targetType.Name} Types")
-                .AddElements(pairs.Select(p => (p.path, p.type)), out var resolvedTypes)
+                .AddElements(pairs.Select(p => (p.path, p.right, p.type)), out var resolvedTypes)
                 .SetCallback(i => onSelect?.Invoke(resolvedTypes[i]))
                 .Build()
                 .Show(worldRect);
@@ -501,6 +502,12 @@ namespace TypeSelector
         {
             var val = p.managedReferenceValue;
             return val != null ? SelectorName.GetDisplayName(val.GetType()) : "-null-";
+        }
+
+        private static string BaseAnnotation(Type type)
+        {
+            Type b = InformativeBase(type);
+            return b == null ? null : FormatType(b);
         }
 
         private static Type InformativeBase(Type type)

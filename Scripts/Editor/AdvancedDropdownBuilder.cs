@@ -17,12 +17,14 @@ public struct AdvancedDropdownPath
     public readonly string    Path;
     public readonly Texture2D Icon;
     public readonly string    Tooltip;
+    public readonly string    RightText;
 
-    public AdvancedDropdownPath(string path, Texture2D icon, string tooltip = null)
+    public AdvancedDropdownPath(string path, Texture2D icon, string tooltip = null, string rightText = null)
     {
-        Path    = path;
-        Icon    = icon;
-        Tooltip = tooltip;
+        Path      = path;
+        Icon      = icon;
+        Tooltip   = tooltip;
+        RightText = rightText;
     }
 }
 
@@ -99,6 +101,18 @@ public sealed class AdvancedDropdownBuilder
 	    }
 	    return this;
     }
+    /// <summary>Typed overload that also stores a right-justified secondary label per leaf.</summary>
+    public AdvancedDropdownBuilder AddElements<T>(IEnumerable<(string path, string rightText, T value)> elements, out T[] values)
+    {
+	    var arr = elements.ToArray();
+	    values = new T[arr.Length];
+	    for (int i = 0; i < arr.Length; i++)
+	    {
+		    values[i] = arr[i].value;
+		    _values.Add(new AdvancedDropdownPath(arr[i].path, null, null, arr[i].rightText));
+	    }
+	    return this;
+    }
     public AdvancedDropdownBuilder AddElement(string path, Texture2D icon, out int index)
     {
         index = _values.Count; _values.Add(new(path, icon)); return this;
@@ -136,12 +150,13 @@ public sealed class AdvancedDropdownBuilder
                 {
                     parent.Children.Add(new DropdownNode
                     {
-                        Label    = seg,
-                        FullPath = _values[i].Path,
-                        Icon     = _values[i].Icon,
-                        Tooltip  = _values[i].Tooltip,
-                        Index    = i,
-                        Parent   = parent,
+                        Label     = seg,
+                        FullPath  = _values[i].Path,
+                        Icon      = _values[i].Icon,
+                        Tooltip   = _values[i].Tooltip,
+                        RightText = _values[i].RightText,
+                        Index     = i,
+                        Parent    = parent,
                     });
                 }
                 else
@@ -198,6 +213,7 @@ internal sealed class DropdownNode
     public string             FullPath;   // full slash-separated path from root, used for search
     public Texture2D          Icon;
     public string             Tooltip;
+    public string             RightText;  // optional right-justified secondary label
     public int                Index    = -1;   // -1 = folder
     public List<DropdownNode> Children = new();
     public DropdownNode       Parent;
@@ -264,6 +280,7 @@ internal sealed class DropdownWindow : EditorWindow
     static readonly Color C_TEXT    = new(0.85f, 0.85f, 0.85f);
     static readonly Color C_SUBTEXT = new(0.50f, 0.50f, 0.50f);
     static readonly Color C_ACCENT  = new(0.25f, 0.49f, 0.96f);
+    static readonly Color C_RIGHT   = new(0.498f, 0.839f, 0.910f);
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -423,6 +440,15 @@ internal sealed class DropdownWindow : EditorWindow
         label.style.color          = C_TEXT;
         label.style.unityTextAlign = TextAnchor.MiddleLeft;
 
+        var baseLabel = new Label { name = "base" };
+        baseLabel.style.fontSize       = 9;
+        baseLabel.style.color          = C_RIGHT;
+        baseLabel.style.unityTextAlign = TextAnchor.MiddleRight;
+        baseLabel.style.marginLeft     = 8;
+        baseLabel.style.marginRight    = 0;
+        baseLabel.style.flexShrink     = 0;
+        baseLabel.style.display        = DisplayStyle.None;
+
         var arrow = new Label("›") { name = "arrow" };
         arrow.style.fontSize = 14;
         arrow.style.color    = C_SUBTEXT;
@@ -454,6 +480,7 @@ internal sealed class DropdownWindow : EditorWindow
 
         row.Add(iconImg);
         row.Add(label);
+        row.Add(baseLabel);
         row.Add(arrow);
         return row;
     }
@@ -466,6 +493,7 @@ internal sealed class DropdownWindow : EditorWindow
 	    var iconImg = row.Q<Image>("icon");
 	    var label   = row.Q<Label>("label");
 	    var arrow   = row.Q<Label>("arrow");
+	    var baseLbl = row.Q<Label>("base");
 
 	    // In search mode show the full path so the user knows where the node lives.
 	    label.text  = !string.IsNullOrWhiteSpace(_search) && node.FullPath != null
@@ -481,6 +509,14 @@ internal sealed class DropdownWindow : EditorWindow
 
 	    if (arrow != null)
 		    arrow.style.display = node.IsFolder ? DisplayStyle.Flex : DisplayStyle.None;
+
+	    if (baseLbl != null)
+	    {
+		    bool showBase = node.IsLeaf && !string.IsNullOrEmpty(node.RightText);
+		    baseLbl.text          = showBase ? node.RightText : string.Empty;
+		    baseLbl.style.display = showBase ? DisplayStyle.Flex : DisplayStyle.None;
+		    
+	    }
 
 	    bool isSelected = index == _listView.selectedIndex;
 
