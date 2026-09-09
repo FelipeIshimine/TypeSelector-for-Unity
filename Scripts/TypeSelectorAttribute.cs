@@ -6,10 +6,12 @@ public class TypeSelectorAttribute : PropertyAttribute
 {
 	public string Label { get; }
 	public readonly DrawMode Mode;
-	public TypeSelectorAttribute(DrawMode mode = DrawMode.Default, string label = null)
+	public readonly bool ShowBaseType;
+	public TypeSelectorAttribute(DrawMode mode = DrawMode.Default, string label = null, bool showBaseType = false)
 	{
 		Label = label;
 		this.Mode = mode;
+		ShowBaseType = showBaseType;
 	}
 }
 

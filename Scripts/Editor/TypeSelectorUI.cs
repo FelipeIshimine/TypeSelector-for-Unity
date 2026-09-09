@@ -47,7 +47,7 @@ namespace TypeSelector
 	        {
 		        return BuildCollection(property, fieldInfo);
 	        }*/
-	        return Build(property, fieldInfo.FieldType,attribute.Mode,attribute.Label);
+	        return Build(property, fieldInfo.FieldType,attribute.Mode,attribute.Label,attribute.ShowBaseType);
         }
 
 
@@ -62,7 +62,7 @@ namespace TypeSelector
 		    return root;
         }
         
-        public static VisualElement Build(SerializedProperty property, Type declaredType, DrawMode drawMode, string label)
+        public static VisualElement Build(SerializedProperty property, Type declaredType, DrawMode drawMode, string label, bool showBaseType = false)
         {
             if (SerializationUtility.HasManagedReferencesWithMissingTypes(property.serializedObject.targetObject))
                 SerializationUtility.ClearAllManagedReferencesWithMissingTypes(property.serializedObject.targetObject);
@@ -143,6 +143,17 @@ namespace TypeSelector
             var activeTypeName  = container.Q<Label>("TypeName") ?? new Label();
 
             activeTypeName.text = GetButtonLabel(property);
+
+            if (showBaseType && property.managedReferenceValue != null)
+            {
+                Type baseType = InformativeBase(property.managedReferenceValue.GetType());
+                if (baseType != null)
+                {
+                    activeTypeName.enableRichText = true;
+                    activeTypeName.text += $"  <color=#7FD6E8>: {FormatType(baseType)}</color>";
+                }
+            }
+
             activeTypeName.RemoveFromClassList("none");
             activeTypeName.RemoveFromClassList("show");
 
@@ -490,6 +501,28 @@ namespace TypeSelector
         {
             var val = p.managedReferenceValue;
             return val != null ? SelectorName.GetDisplayName(val.GetType()) : "-null-";
+        }
+
+        private static Type InformativeBase(Type type)
+        {
+            for (var b = type.BaseType; b != null && b != typeof(object); b = b.BaseType)
+                if (b.IsGenericType)
+                    return b;
+
+            return type.BaseType != null && type.BaseType != typeof(object) ? type.BaseType : null;
+        }
+
+        private static string FormatType(Type type)
+        {
+            if (!type.IsGenericType)
+                return type.Name;
+
+            string name = type.Name;
+            int tick = name.IndexOf('`');
+            if (tick >= 0) name = name.Substring(0, tick);
+
+            string args = string.Join(", ", type.GetGenericArguments().Select(FormatType));
+            return $"{name}<{args}>";
         }
 
         // ── Style helpers ─────────────────────────────────────────────────────────
